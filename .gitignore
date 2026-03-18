@@ -1,0 +1,10 @@
+Movement/
+Ccount/
+UPC/
+Demographics/
+*.SD2
+*.zip
+.DS_Store
+Thumbs.db
+*.lnk
+~$*
