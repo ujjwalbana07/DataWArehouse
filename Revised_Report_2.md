@@ -25,6 +25,7 @@
     - 8.4 Dimension Identification
     - 8.5 Fact Identification
     - 8.6 Star Schema Table Definitions
+    - 8.7 Schema Justification for BQ1–BQ5
 9. SQL Query Design / Analytical Query Layer
 10. Mapping Table #1: Source Files to Staging Tables
 11. Mapping Table #2: Staging Tables to Data Mart Tables
@@ -47,7 +48,7 @@ The central architectural decision is a **dual fact table design**: `Fact_Weekly
 
 The design follows **Ralph Kimball's Bottom-Up Dimensional Modeling** methodology, organizing data into independent star-schema data marts linked through conformed dimensions (`Dim_Store` and `Dim_Date`). This bus architecture enables safe cross-process analysis—most critically for BQ5, which requires comparing traffic volumes against sales revenue using the Kimball drill-across query pattern.
 
-Targeted for deployment on **Microsoft SQL Server 2016** in a Hybrid Online Analytical Processing (HOLAP) environment, the physical design leverages Nonclustered Columnstore Indexes, Materialized Indexed Views, and Table Partitioning to ensure fast response times for read-heavy analytical workloads.
+Targeted for deployment on **Microsoft SQL Server 2016** in a Hybrid Online Analytical Processing (HOLAP) environment, the physical design leverages Clustered Columnstore Indexes, Materialized Indexed Views, and Table Partitioning to ensure fast response times for read-heavy analytical workloads.
 
 ---
 
@@ -231,8 +232,8 @@ Dimensions provide the filtering, grouping, and labeling context for every analy
 | :--- | :--- |
 | **Purpose** | Translates raw DFF integer WEEK IDs into standard calendar attributes |
 | **Source** | Derived from `wlnd.WEEK` — sequential integers from ~September 1989 |
-| **Key Attributes** | `week_id` (NK), `calendar_month`, `calendar_quarter`, `calendar_year`, `season` |
-| **Population Logic** | Each WEEK_ID mapped to calendar via: `epoch + (WEEK_ID - 1) x 7 days`, where epoch = Sept 14, 1989. Month, quarter, and year extracted from computed date. `Season` assigned via month ranges (Spring: 3-5, Summer: 6-8, Fall: 9-11, Winter: 12-2) |
+| **Key Attributes** | `week_id` (NK), `calendar_month`, `calendar_quarter`, `calendar_year`, `season`, `holiday_flag` |
+| **Population Logic** | Each WEEK_ID mapped to calendar via: `epoch + (WEEK_ID - 1) x 7 days`, where epoch = Sept 14, 1989. Month, quarter, and year extracted from computed date. `Season` assigned via month ranges (Spring: 3-5, Summer: 6-8, Fall: 9-11, Winter: 12-2). `holiday_flag` set to 1 for weeks containing Thanksgiving or Christmas |
 | **Analytical Role** | Time-series trending, YoY comparison, seasonal and quarterly analysis |
 | **Conformed Status** | Shared by both fact tables |
 | **BQs Supported** | BQ1, BQ2, BQ5 |
@@ -338,7 +339,7 @@ All schema tables below follow the standardized format: Column Name, Data Type, 
 | `calendar_quarter` | INT | Attribute | Calendar quarter (1-4) | Derived | N/A |
 | `calendar_year` | INT | Attribute | Calendar year (1989-1994) | Derived | N/A |
 | `season` | VARCHAR(10) | Attribute | Seasonal category (Winter/Spring/Summer/Fall) | Derived | N/A |
-| `holiday_flag` | BOOLEAN | Attribute | Flag for major sales holidays (Thanksgiving/Christmas) | Derived | N/A |
+| `holiday_flag` | BIT | Attribute | Flag for major sales holidays (Thanksgiving/Christmas); 1 = holiday week, 0 = standard | Derived | N/A |
 
 *Derivation logic:* DFF WEEK_IDs are sequential integers beginning at epoch = September 14, 1989. During ETL: `calendar_date = epoch + (WEEK_ID - 1) x 7 days`. Month, quarter, and year are extracted from computed date.
 
@@ -596,20 +597,21 @@ This table documents the transformation logic from staging into the final star s
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `stg_UPC` | `UPC_CODE` | BIGINT | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Product` | `product_sk` |
 | `stg_UPC` | `UPC_CODE` | BIGINT | Copy | Transfer original UPC as natural key | REJECT | N/A | `Dim_Product` | `upc_id` |
-| `stg_UPC` | `ITEM_DESC`| VARCHAR | Copy | Load cleansed product description | SET DEFAULT | 'UNKNOWN' | `Dim_Product` | `item_description` |
-| `stg_UPC` | `COM_CODE` | INT | Copy | Load denormalized category ID | SET DEFAULT | -1 | `Dim_Product` | `commodity_code` |
+| `stg_UPC` | `ITEM_DESCRIPTION`| VARCHAR | Copy | Load cleansed product description | SET DEFAULT | 'UNKNOWN' | `Dim_Product` | `item_description` |
+| `stg_UPC` | `COMMODITY_CODE` | INT | Copy | Load denormalized category ID | SET DEFAULT | -1 | `Dim_Product` | `commodity_code` |
 | `stg_Demo` | `STORE_ID` | INT | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Store` | `store_sk` |
 | `stg_Demo` | `STORE_ID` | INT | Copy | Transfer store ID as natural key | REJECT | N/A | `Dim_Store` | `store_id` |
 | `stg_Demo` | `STORE_ZONE`| INT | Copy | Load geographic pricing segment | REJECT | N/A | `Dim_Store` | `store_zone` |
-| `stg_Demo` | `MED_INCOME`| DECIMAL | Copy | Load reverse-log transformed income | SET DEFAULT | 0.00 | `Dim_Store` | `median_income` |
-| `stg_Demo` | `EDUC_PCT` | DECIMAL | Copy | Load education percentage | SET DEFAULT | 0.00 | `Dim_Store` | `education_pct` |
-| `stg_Demo` | `MED_INCOME`| VARCHAR | Derive | CASE: >=60k=High, >=35k=Med, else Low | SET DEFAULT | 'Unknown' | `Dim_Store` | `income_band` |
+| `stg_Demo` | `MEDIAN_INCOME`| DECIMAL | Copy | Load reverse-log transformed income | SET DEFAULT | 0.00 | `Dim_Store` | `median_income` |
+| `stg_Demo` | `EDUCATION_PCT` | DECIMAL | Copy | Load education percentage | SET DEFAULT | 0.00 | `Dim_Store` | `education_pct` |
+| `stg_Demo` | `MEDIAN_INCOME`| VARCHAR | Derive | CASE: >=60k=High, >=35k=Med, else Low | SET DEFAULT | 'Unknown' | `Dim_Store` | `income_band` |
 | `stg_Movement`| `WEEK_ID` | INT | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Date` | `date_sk` |
 | `stg_Movement`| `WEEK_ID` | INT | Copy | Load sequential DFF week numbering | REJECT | N/A | `Dim_Date` | `week_id` |
 | `stg_Movement`| `WEEK_ID` | DATE | Derive | Extract month from computed date | REJECT | N/A | `Dim_Date` | `calendar_month` |
 | `stg_Movement`| `WEEK_ID` | INT | Derive | Extract quarter from computed date | REJECT | N/A | `Dim_Date` | `calendar_quarter` |
 | `stg_Movement`| `WEEK_ID` | INT | Derive | Extract year from computed date | REJECT | N/A | `Dim_Date` | `calendar_year` |
 | `stg_Movement`| `WEEK_ID` | VARCHAR | Derive | Map month to seasonal category | SET DEFAULT | 'Unknown' | `Dim_Date` | `season` |
+| `stg_Movement`| `WEEK_ID` | BIT | Derive | Set 1 for Thanksgiving/Christmas weeks | SET DEFAULT | 0 | `Dim_Date` | `holiday_flag` |
 | `stg_Movement`| `SALE_CODE`| CHAR | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Promotion` | `promotion_sk` |
 | `stg_Movement`| `SALE_CODE`| CHAR | Copy | Load valid codes (B, C, S, NONE) | SET DEFAULT | 'NONE' | `Dim_Promotion` | `sale_code` |
 | `stg_Movement`| `SALE_CODE`| VARCHAR | Derive | Map code to descriptive label | SET DEFAULT | 'No Promo' | `Dim_Promotion` | `promotion_type` |
@@ -656,7 +658,7 @@ To ensure the "Consulting Grade" accuracy of the DFF Data Warehouse, the followi
 
 ### 13.1 Roll-up Integrity (The Truth Check)
 The architecture ensures that a grand total of revenue calculated at the fact grain (Store x Product x Week) perfectly matches the pre-aggregated dashboard views (Store x Year).
-- **Proof:** `SELECT SUM(dollar_sales) FROM Fact_Weekly_Sales` == `SELECT SUM(monthly_revenue) FROM Materialized_Monthly_Rev`.
+- **Proof:** `SELECT SUM(dollar_sales) FROM Fact_Weekly_Sales` must equal the aggregated result from the Materialized Indexed View defined on `Dim_Date.calendar_year` and `Dim_Store.store_sk`. These views are created using `CREATE VIEW ... WITH SCHEMABINDING` and `CREATE UNIQUE CLUSTERED INDEX` to guarantee the optimizer can auto-match queries.
 - **Reasoning:** Grain isolation prevents the common snowflake-error of row duplication during joins.
 
 ### 13.2 Double Counting Prevention (The Traffic Proof)
@@ -838,7 +840,7 @@ Demographic data from `DEMO.csv` is treated as fixed 1990 Census values, assumed
 **Data Quality Filtering:**
 Records with `OK = 0` are permanently removed during staging. Records with `MOVE <= 0` or `PRICE <= 0` are also rejected. Only validated transactions flow into the final fact tables.
 
-**Profit Interpretation:**
+**Unknown Member Strategy:**
 The surrogate key `-1` is reserved for unresolved dimension lookups. This ensures referential integrity in fact tables even when attribute data is late-arriving or missing from source.
 
 ## 19.2 Mermaid ER Diagram Specification
@@ -860,7 +862,7 @@ erDiagram
         int calendar_quarter
         int calendar_year
         varchar season
-        boolean holiday_flag
+        bit holiday_flag
     }
     Dim_Product {
         int product_sk PK
