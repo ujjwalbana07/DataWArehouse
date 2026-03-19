@@ -209,6 +209,8 @@ If traffic counts were embedded into `Fact_Weekly_Sales`, each store's weekly cu
 
 This is a textbook grain-violation error. The two grains must remain in separate fact tables. Cross-fact analysis uses the Kimball drill-across pattern (pre-aggregate each fact to common grain, then join).
 
+All measures strictly conform to their declared grain, ensuring no aggregation ambiguity or duplication.
+
 ## 8.4 Dimension Identification
 
 Dimensions provide the filtering, grouping, and labeling context for every analytical query. Each dimension table below serves a specific role within the star schema.
@@ -277,6 +279,9 @@ Fact tables store the quantitative performance metrics produced by each business
 | `units_sold` | Additive | `wlnd.MOVE` | Volume analysis, demand forecasting |
 | `retail_price` | Non-additive | `wlnd.PRICE` | Price point analysis (use AVG not SUM) |
 | `dollar_sales` | Additive | Derived: `(PRICE x MOVE) / QTY` | Revenue reporting, trend analysis |
+
+*Revenue Formula Note:* The `QTY` field represents the package quantity (e.g., a 6-pack has QTY = 6). Dividing by QTY normalizes multi-pack pricing so that `dollar_sales` reflects actual per-transaction revenue rather than per-unit shelf price. Without this normalization, multi-pack items would report artificially inflated revenue.
+
 | `profit_margin_pct` | Non-additive | `wlnd.PROFIT` | Profitability analysis (use AVG) |
 
 #### Fact_Customer_Traffic
@@ -340,6 +345,8 @@ All schema tables below follow the standardized format: Column Name, Data Type, 
 | `calendar_year` | INT | Attribute | Calendar year (1989-1994) | Derived | N/A |
 | `season` | VARCHAR(10) | Attribute | Seasonal category (Winter/Spring/Summer/Fall) | Derived | N/A |
 | `holiday_flag` | BIT | Attribute | Flag for major sales holidays (Thanksgiving/Christmas); 1 = holiday week, 0 = standard | Derived | N/A |
+
+`holiday_flag` enables future seasonal and promotional impact analysis, allowing analysts to isolate holiday-driven demand spikes from baseline traffic patterns.
 
 *Derivation logic:* DFF WEEK_IDs are sequential integers beginning at epoch = September 14, 1989. During ETL: `calendar_date = epoch + (WEEK_ID - 1) x 7 days`. Month, quarter, and year are extracted from computed date.
 
@@ -528,7 +535,7 @@ FROM Sales_By_Store_Week sw
 ORDER BY s.store_id, d.week_id;
 ```
 
-**Technical Justification (Fan-Out Prevention):** A direct join between `Fact_Weekly_Sales` and `Fact_Customer_Traffic` would cause "Fan-Out"—the weekly traffic count would be duplicated for every product sold that week. If a store sells 5,000 distinct items in a week where 10,000 customers visited, a direct join would report 50 million customers (5,000 items x 10,000 traffic). By using CTEs to pre-aggregate the sales to the Store x Week grain *before* the join, we ensure a mathematically correct one-to-one relationship.
+**Technical Justification (Fan-Out Prevention):** A direct join between `Fact_Weekly_Sales` and `Fact_Customer_Traffic` would cause "Fan-Out"—the weekly traffic count would be duplicated for every product sold that week. If a store sells 5,000 distinct items in a week where 10,000 customers visited, a direct join would report 50 million customers (5,000 items x 10,000 traffic). By using CTEs to pre-aggregate the sales to the Store x Week grain *before* the join, we ensure a mathematically correct one-to-one relationship. This guarantees a one-to-one join and eliminates fan-out, ensuring mathematically valid aggregation.
 
 ---
 
@@ -650,7 +657,7 @@ This strategy serves three purposes:
 
 The physical design targets **Microsoft SQL Server 2016** in a read-heavy OLAP configuration. Both fact tables carry **Clustered Columnstore Indexes (CCI)**, which store data column-by-column and apply dictionary compression to repetitive foreign keys (e.g., `store_sk`), achieving an average **10:1 compression ratio** and reducing the ~5 GB raw dataset to approximately 500 MB on disk. CCI enables two critical optimizer behaviors: *segment elimination* (SQL Server tracks MIN/MAX metadata per ~1M-row segment and skips irrelevant blocks during filtered scans, reducing I/O by up to 90%) and *batch-mode processing* (rows are processed in batches of ~900, dramatically accelerating `GROUP BY` and `SUM` aggregations). To support point-lookups required during ETL auditing (e.g., `WHERE store_sk = 42`), we overlay **Nonclustered B-tree Indexes** on `store_sk` and `date_sk` in both fact tables, creating a hybrid indexing strategy where the optimizer automatically selects the columnstore path for broad scans and the B-tree path for narrow filters.
 
-Both fact tables are **table-partitioned** on `date_sk` by calendar year, enabling partition pruning so that time-filtered queries (e.g., `WHERE d.calendar_year = 1993`) read only matching partitions. For frequently accessed summary reports (e.g., monthly store revenue dashboards), the design implements **Materialized Indexed Views** that pre-aggregate common roll-ups so the optimizer can satisfy requests from pre-computed results without scanning the base fact tables. The ETL pipeline enforces data quality via SSIS: records where `OK = 0` are dropped, rows with `MOVE <= 0` or `PRICE <= 0` are rejected, null/blank `SALE` codes are mapped to `'NONE'`, and `TRIM`/`UPPER` operations standardize descriptive text. Surrogate keys are system-generated `INT IDENTITY` values, decoupling the warehouse from source natural key changes. Dimension tables use **SCD Type 1** (overwrite), and fact tables use an **incremental append** strategy (`WHERE date_sk > MAX(date_sk)`). Any fact row that fails a dimension lookup is assigned the **Unknown Member (SK = -1)**, preserving data completeness and enabling late-arriving dimension reconciliation without reprocessing historical loads.
+Both fact tables are **table-partitioned** on `date_sk` by calendar year, enabling partition pruning so that time-filtered queries (e.g., `WHERE d.calendar_year = 1993`) read only matching partitions. Columnstore indexes enable batch-mode execution and compression, significantly improving OLAP aggregation performance. For frequently accessed summary reports (e.g., monthly store revenue dashboards), the design implements **Materialized Indexed Views** that pre-aggregate common roll-ups so the optimizer can satisfy requests from pre-computed results without scanning the base fact tables. The ETL pipeline enforces data quality via SSIS: records where `OK = 0` are dropped, rows with `MOVE <= 0` or `PRICE <= 0` are rejected, null/blank `SALE` codes are mapped to `'NONE'`, and `TRIM`/`UPPER` operations standardize descriptive text. Surrogate keys are system-generated `INT IDENTITY` values, decoupling the warehouse from source natural key changes. Dimension tables use **SCD Type 1** (overwrite), and fact tables use an **incremental append** strategy (`WHERE date_sk > MAX(date_sk)`). Any fact row that fails a dimension lookup is assigned the **Unknown Member (SK = -1)**, preserving data completeness and enabling late-arriving dimension reconciliation without reprocessing historical loads.
 
 # 13. Validation and Data Integrity Checks
 
@@ -671,6 +678,8 @@ The unknown member (-1) strategy ensures that the "Outer Join" problem is elimin
 - **Validation:** `SELECT COUNT(*) FROM Fact_Weekly_Sales f LEFT JOIN Dim_Product p ON f.product_sk = p.product_sk WHERE p.product_sk IS NULL` always returns **0**.
 - **Proof:** Every fact row is forced to point to a valid SK (real or -1), ensuring every dollar of revenue is always attributed to some product category, store, and date.
 
+All joins occur only after grain alignment or aggregation, preventing measure duplication.
+
 ---
 
 # 14. Star Schema ERD
@@ -679,7 +688,7 @@ This section presents the Entity-Relationship Diagram (ERD) for the DFF data war
 
 ## 14.1 Schema Overview
 
-This design follows a **pure star schema with no snowflaking**. Two fact tables sit at the center, surrounded by four dimension tables. `Dim_Store` and `Dim_Date` serve as conformed dimensions shared across both fact tables, while `Dim_Product` and `Dim_Promotion` connect exclusively to `Fact_Weekly_Sales`. All relationships are one-to-many (1:M). Strict grain isolation is enforced: `Fact_Weekly_Sales` operates at Store x Product x Week while `Fact_Customer_Traffic` operates at Store x Week.
+This design follows a **pure star schema with no snowflaking**. Two fact tables sit at the center, surrounded by four dimension tables. `Dim_Store` and `Dim_Date` serve as conformed dimensions shared across both fact tables, while `Dim_Product` and `Dim_Promotion` connect exclusively to `Fact_Weekly_Sales`. All relationships are one-to-many (1:M) and are enforced through surrogate keys, ensuring referential integrity. Strict grain isolation is enforced: `Fact_Weekly_Sales` operates at Store x Product x Week while `Fact_Customer_Traffic` operates at Store x Week.
 
 ## 14.2 Relationship Cardinality
 
