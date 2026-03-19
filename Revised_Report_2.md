@@ -259,6 +259,7 @@ Dimensions provide the filtering, grouping, and labeling context for every analy
 | **Source** | Derived from `wlnd.SALE` flag: B="Bonus Buy", C="Coupon", S="Simple Reduction", NONE="No Promotion" |
 | **Key Attributes** | `sale_code` (NK: B/C/S/NONE), `promotion_type` (descriptive label) |
 | **Analytical Role** | Promotional vs. non-promotional ROI comparison (BQ3) |
+| **Cardinality** | Low-cardinality dimension (~4 distinct values: B, C, S, NONE), optimized for efficient grouping and filtering with minimal storage overhead |
 | **Promotion vs. Unknown Distinction** | `sale_code = 'NONE'` represents a valid business state (the transaction had no promotion). This is distinct from the Unknown Member (`promotion_sk = -1`), which represents an ETL lookup failure where the source `SALE` value could not be resolved |
 | **BQs Supported** | BQ3 |
 
@@ -610,7 +611,10 @@ This table documents the transformation logic from staging into the final star s
 | `stg_Demo` | `STORE_ZONE`| INT | Copy | Load geographic pricing segment | REJECT | N/A | `Dim_Store` | `store_zone` |
 | `stg_Demo` | `MEDIAN_INCOME`| DECIMAL | Copy | Load reverse-log transformed income | SET DEFAULT | 0.00 | `Dim_Store` | `median_income` |
 | `stg_Demo` | `EDUCATION_PCT` | DECIMAL | Copy | Load education percentage | SET DEFAULT | 0.00 | `Dim_Store` | `education_pct` |
-| `stg_Demo` | `MEDIAN_INCOME`| VARCHAR | Derive | CASE: >=60k=High, >=35k=Med, else Low | SET DEFAULT | 'Unknown' | `Dim_Store` | `income_band` |
+| `stg_Demo` | `MEDIAN_INCOME`| DECIMAL | Derive | Derived from MEDIAN_INCOME (DECIMAL) using CASE-based bucketing: >=60k=High, >=35k=Med, else Low | SET DEFAULT | 'Unknown' | `Dim_Store` | `income_band` |
+
+*Derivation Note:* All `Dim_Date` calendar attributes (`calendar_month`, `calendar_quarter`, `calendar_year`, `season`, `holiday_flag`) are derived from a computed `calendar_date = epoch + (WEEK_ID - 1) × 7 days`, where epoch = September 14, 1989.
+
 | `stg_Movement`| `WEEK_ID` | INT | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Date` | `date_sk` |
 | `stg_Movement`| `WEEK_ID` | INT | Copy | Load sequential DFF week numbering | REJECT | N/A | `Dim_Date` | `week_id` |
 | `stg_Movement`| `WEEK_ID` | DATE | Derive | Extract month from computed date | REJECT | N/A | `Dim_Date` | `calendar_month` |
@@ -635,7 +639,7 @@ This table documents the transformation logic from staging into the final star s
 
 ### Unknown Member Strategy (SK = -1)
 
-Following Kimball best practice, every dimension table is pre-loaded with a default **Unknown Member** record at surrogate key `-1`. During ETL, any fact row that fails a dimension lookup (e.g., a Movement record references a STORE_ID not found in `stg_Demo`) is assigned `store_sk = -1` rather than being dropped.
+Following Kimball best practice, every dimension table is pre-loaded with a default **Unknown Member** record at surrogate key `-1` **before any fact table loading begins**. This sequencing ensures that foreign key constraints never fail during ETL. During fact loading, any row that fails a dimension lookup (e.g., a Movement record references a STORE_ID not found in `stg_Demo`) is assigned `store_sk = -1` rather than being dropped.
 
 This strategy serves three purposes:
 
@@ -670,7 +674,7 @@ The architecture ensures that a grand total of revenue calculated at the fact gr
 ### 13.2 Double Counting Prevention (The Traffic Proof)
 Query BQ5 (Conversion Rate) is the primary risk area for double counting.
 - **Validation:** By using the CTE aggregation pattern, we force the SQL engine to resolve the Sales grain *before* it ever sees the Traffic grain.
-- **Proof:** A test query comparing `SUM(customer_count)` in the source CSV vs. the result of a BQ5 drill-across join shows a **0% variance**. A standard join without CTEs would show a variance of over 10,000% (due to the product fan-out).
+- **Proof:** A test query comparing `SUM(customer_count)` in the source CSV vs. the result of a BQ5 drill-across join shows a **0% variance**. A direct join without CTEs would result in significant overcounting due to grain mismatch and row duplication across the product dimension.
 
 ### 13.3 Referential Integrity (FK Accuracy)
 The unknown member (-1) strategy ensures that the "Outer Join" problem is eliminated.
