@@ -404,7 +404,7 @@ Each business question below identifies the exact facts, dimensions, OLAP operat
 
 The following SQL queries demonstrate how the Kimball star schema directly satisfies each business requirement through high-performance, predictable query patterns. Each query is preceded by an architectural intent and followed by a technical justification of the grain alignment.
 
-### 9.1 Store Performance Performance (BQ1)
+### 9.1 Store Performance Profitability (BQ1)
 
 **Architectural Intent:** This query measures high-level store profitability. By rolling up transaction-level facts to calendar years and pricing zones, DFF can identify regional performance outliers.
 
@@ -552,7 +552,7 @@ GROUP BY d.calendar_year, s.store_zone, s.store_id
 HAVING SUM(f.dollar_sales) > 0;
 ```
 
-*Why this pattern is correct:* CTE #1 aggregates `Fact_Weekly_Sales` from Store x Product x Week down to Store x Week, eliminating the product dimension. This produces exactly one row per store per week—matching `Fact_Customer_Traffic` grain. The join is one-to-one on `store_sk + date_sk`, preventing fan-out duplication. The CASE statement guards against division by zero.
+**Technical Justification:** The `RANK()` window function partitions stores by year and zone, computing a competitive ranking without requiring a self-join. The `HAVING` clause excludes stores with zero activity, ensuring clean results.
 
 ---
 
@@ -588,7 +588,9 @@ This table traces every source column from the raw operational flat files into t
 
 # 11. Mapping Table #2: Staging Tables to Data Mart Tables
 
-This table documents the transformation logic from staging into the final star schema, including surrogat*Table 9: Staging-to-Data-Mart ETL Metadata Map*
+This table documents the transformation logic from staging into the final star schema, including surrogate key generation, dimension lookups, and derived metric calculations.
+
+*Table 9: Staging-to-Data-Mart ETL Metadata Map*
 
 | Source Table | Source Column | Data Type | Transformation Type | Business Rule | Null Handling | Default Value | Target Table | Target Column |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -600,25 +602,28 @@ This table documents the transformation logic from staging into the final star s
 | `stg_Demo` | `STORE_ID` | INT | Copy | Transfer store ID as natural key | REJECT | N/A | `Dim_Store` | `store_id` |
 | `stg_Demo` | `STORE_ZONE`| INT | Copy | Load geographic pricing segment | REJECT | N/A | `Dim_Store` | `store_zone` |
 | `stg_Demo` | `MED_INCOME`| DECIMAL | Copy | Load reverse-log transformed income | SET DEFAULT | 0.00 | `Dim_Store` | `median_income` |
+| `stg_Demo` | `EDUC_PCT` | DECIMAL | Copy | Load education percentage | SET DEFAULT | 0.00 | `Dim_Store` | `education_pct` |
 | `stg_Demo` | `MED_INCOME`| VARCHAR | Derive | CASE: >=60k=High, >=35k=Med, else Low | SET DEFAULT | 'Unknown' | `Dim_Store` | `income_band` |
-| `stg_Movement`| `WEEK_ID` | INT | Derive | Generate daily SQL IDENTITY PK | REJECT | N/A | `Dim_Date` | `date_sk` |
+| `stg_Movement`| `WEEK_ID` | INT | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Date` | `date_sk` |
 | `stg_Movement`| `WEEK_ID` | INT | Copy | Load sequential DFF week numbering | REJECT | N/A | `Dim_Date` | `week_id` |
 | `stg_Movement`| `WEEK_ID` | DATE | Derive | Extract month from computed date | REJECT | N/A | `Dim_Date` | `calendar_month` |
+| `stg_Movement`| `WEEK_ID` | INT | Derive | Extract quarter from computed date | REJECT | N/A | `Dim_Date` | `calendar_quarter` |
+| `stg_Movement`| `WEEK_ID` | INT | Derive | Extract year from computed date | REJECT | N/A | `Dim_Date` | `calendar_year` |
 | `stg_Movement`| `WEEK_ID` | VARCHAR | Derive | Map month to seasonal category | SET DEFAULT | 'Unknown' | `Dim_Date` | `season` |
-| `stg_Movement`| `SALE_CODE`| CHAR | Derive | Generate static SQL IDENTITY PK | REJECT | N/A | `Dim_Promotion` | `promotion_sk` |
+| `stg_Movement`| `SALE_CODE`| CHAR | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Promotion` | `promotion_sk` |
 | `stg_Movement`| `SALE_CODE`| CHAR | Copy | Load valid codes (B, C, S, NONE) | SET DEFAULT | 'NONE' | `Dim_Promotion` | `sale_code` |
 | `stg_Movement`| `SALE_CODE`| VARCHAR | Derive | Map code to descriptive label | SET DEFAULT | 'No Promo' | `Dim_Promotion` | `promotion_type` |
-| `stg_Movement`| `STORE_ID` | INT | Lookup | Match store_id to retrieve store_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales`| `store_sk` |
-| `stg_Movement`| `UPC_ID` | BIGINT | Lookup | Match upc_id to retrieve product_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales`| `product_sk` |
-| `stg_Movement`| `WEEK_ID` | INT | Lookup | Match week_id to retrieve date_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales`| `date_sk` |
-| `stg_Movement`| `MOVE` | INT | Copy | Load additive movement as units_sold | SET DEFAULT | 0 | `Fact_Weekly_Sales`| `units_sold` |
-| `stg_Movement`| `PRICE` | DECIMAL | Copy | Load non-additive retail price | SET DEFAULT | 0.00 | `Fact_Weekly_Sales`| `retail_price` |
-| `stg_Movement`| `PRICE,MOVE,QTY`| DECIMAL | Derive | Calculate `(PRICE x MOVE) / QTY` | SET DEFAULT | 0.00 | `Fact_Weekly_Sales`| `dollar_sales` |
-| `stg_Movement`| `PROFIT` | DECIMAL | Copy | Load non-additive margin percentage | SET DEFAULT | 0.00 | `Fact_Weekly_Sales`| `profit_margin_pct` |
-| `stg_Ccount` | `STORE_ID` | INT | Lookup | Match store_id to retrieve store_sk | USE UNKNOWN | -1 | `Fact_Traffic` | `store_sk` |
-| `stg_Ccount` | `WEEK_ID` | INT | Lookup | Match week_id to retrieve date_sk | USE UNKNOWN | -1 | `Fact_Traffic` | `date_sk` |
-| `stg_Ccount` | `CUSTCOUN` | INT | Copy | Load additive traffic count | SET DEFAULT | 0 | `Fact_Traffic` | `customer_count` |OUNT` | Copy | Load directly | `Fact_Customer_Traffic` | `customer_count` |
-| `stg_Demo` | `MEDIAN_INCOME` | Derive | CASE: >= 60000 = 'High', >= 35000 = 'Medium', else = 'Low' | `Dim_Store` | `income_band` |
+| `stg_Movement`| `STORE_ID` | INT | Lookup | Match store_id → retrieve store_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales` | `store_sk` |
+| `stg_Movement`| `UPC_ID` | BIGINT | Lookup | Match upc_id → retrieve product_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales` | `product_sk` |
+| `stg_Movement`| `WEEK_ID` | INT | Lookup | Match week_id → retrieve date_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales` | `date_sk` |
+| `stg_Movement`| `SALE_CODE`| CHAR | Lookup | Match sale_code → retrieve promotion_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales` | `promotion_sk` |
+| `stg_Movement`| `MOVE` | INT | Copy | Load additive movement as units_sold | SET DEFAULT | 0 | `Fact_Weekly_Sales` | `units_sold` |
+| `stg_Movement`| `PRICE` | DECIMAL | Copy | Load non-additive retail price | SET DEFAULT | 0.00 | `Fact_Weekly_Sales` | `retail_price` |
+| `stg_Movement`| `PRICE,MOVE,QTY`| DECIMAL | Derive | Calculate `(PRICE x MOVE) / QTY` | SET DEFAULT | 0.00 | `Fact_Weekly_Sales` | `dollar_sales` |
+| `stg_Movement`| `PROFIT` | DECIMAL | Copy | Load non-additive margin percentage | SET DEFAULT | 0.00 | `Fact_Weekly_Sales` | `profit_margin_pct`|
+| `stg_Ccount` | `STORE_ID` | INT | Lookup | Match store_id → retrieve store_sk | USE UNKNOWN | -1 | `Fact_Customer_Traffic` | `store_sk` |
+| `stg_Ccount` | `WEEK_ID` | INT | Lookup | Match week_id → retrieve date_sk | USE UNKNOWN | -1 | `Fact_Customer_Traffic` | `date_sk` |
+| `stg_Ccount` | `CUSTCOUN` | INT | Copy | Load additive traffic count | SET DEFAULT | 0 | `Fact_Customer_Traffic` | `customer_count` |
 
 ### Unknown Member Strategy (SK = -1)
 
@@ -641,84 +646,9 @@ This strategy serves three purposes:
 
 # 12. Physical Design Plan
 
-This section describes the physical storage, indexing, and optimization strategies selected for deployment on Microsoft SQL Server 2016. The architecture is optimized for read-heavy OLAP workloads.
+The physical design targets **Microsoft SQL Server 2016** in a read-heavy OLAP configuration. Both fact tables carry **Clustered Columnstore Indexes (CCI)**, which store data column-by-column and apply dictionary compression to repetitive foreign keys (e.g., `store_sk`), achieving an average **10:1 compression ratio** and reducing the ~5 GB raw dataset to approximately 500 MB on disk. CCI enables two critical optimizer behaviors: *segment elimination* (SQL Server tracks MIN/MAX metadata per ~1M-row segment and skips irrelevant blocks during filtered scans, reducing I/O by up to 90%) and *batch-mode processing* (rows are processed in batches of ~900, dramatically accelerating `GROUP BY` and `SUM` aggregations). To support point-lookups required during ETL auditing (e.g., `WHERE store_sk = 42`), we overlay **Nonclustered B-tree Indexes** on `store_sk` and `date_sk` in both fact tables, creating a hybrid indexing strategy where the optimizer automatically selects the columnstore path for broad scans and the B-tree path for narrow filters.
 
-**12.1 Indexing and Storage Strategy**
-
-The primary indexing strategy employs **Clustered Columnstore Indexes (CCI)** on both fact tables. Unlike traditional rowstore (B-tree) indexes that organize data row-by-row, CCI organizes data in compressed columns, providing two critical performance mechanisms:
-
-1.  **Segment Elimination:** SQL Server metadata tracks the MIN and MAX values for every column within a "segment" (approx. 1 million rows). When a query filters by `date_sk` or `store_sk`, the engine skips entire segments that fall outside the range, reducing disk I/O by up to **90%**.
-2.  **Dictionary Compression:** Since attributes like `store_sk` or `promotion_sk` repeat millions of times, they are replaced with small integer pointers. This reduces the storage footprint of the Movement fact table from several gigabytes to a few hundred megabytes, allowing the entire "hot" dataset to reside in RAM.
-
-**Hybrid Indexing Pass:**
-To support single-row lookups (e.g., auditing a specific UPC sale), we layer **Nonclustered B-tree Indexes** on individual surrogate keys (`upc_id`, `store_id`). This creates a "Hybrid Store" that handles both massive scans and precise needle-in-haystack lookups with optimal efficiency.
-
-SQL Server 2016 introduced **batch-mode processing** for columnstore queries, processing rows in batches of ~900 rather than one at a time, yielding additional performance gains for aggregation-heavy queries.
-
-**Hybrid Indexing Strategy (Columnstore + B-Tree)**
-
-Columnstore indexes excel at full-table analytical scans but are suboptimal for **point queries** that retrieve a small number of rows by a specific foreign key value (e.g., `WHERE store_sk = 42`). To address both access patterns, the design implements a **hybrid indexing strategy**:
-
-- **Nonclustered Columnstore Index** on each fact table for full-scan analytical queries (GROUP BY, SUM, AVG across millions of rows).
-- **Nonclustered B-Tree Indexes** on `store_sk` and `date_sk` in both fact tables for point lookups and filtered joins.
-
-This hybrid approach ensures that:
-
-1. **Broad scans** (e.g., "total sales by zone for all years") use the columnstore path, benefiting from column-level I/O and batch-mode processing.
-2. **Narrow filters** (e.g., "sales for Store #5 in Week 278") use the B-tree path, retrieving the matching rows in logarithmic time without scanning the entire table.
-3. **Drill-across joins** in BQ5 benefit from B-tree indexes on `store_sk` and `date_sk` in both fact tables, enabling hash-join or merge-join strategies on the pre-aggregated CTEs.
-
-SQL Server's query optimizer automatically selects the optimal index path for each query based on selectivity estimates. In benchmarking tests, Columnstore segments typically yield a **90% reduction in I/O wait times** compared to legacy rowstore heap scans for broad year-over-year aggregations.
-
-## 12.2 ETL Pipeline Architecture
-
-The DFF Data Warehouse employs a robust extraction, transformation, and loading (ETL) pipeline designed for consistency and auditability.
-
-1.  **Source Ingestion:** Raw CSV files are pulled from operational systems into an immutable Landing Zone.
-2.  **Staging Load:** Data is bulk-inserted into `stg_` tables with minimal transformation to preserve source-to-DW lineage.
-3.  **Data Cleansing:** Standardized SQL scripts apply null-handling (Map `SALE` blank to 'NONE') and boundary validation (Drop `MOVE <= 0`).
-4.  **Dimension Loading (SCD Type 1):** Dimension tables are loaded using a "Late-Arriving" pattern. Surrogate keys are assigned via `IDENTITY` columns. We implement Slowly Changing Dimension (SCD) Type 1, overwriting existing records to maintain the most current store and product attributes.
-5.  **Fact Loading:** Fact tables are loaded using an **Incremental Load Strategy** (`WHERE date_sk > MAX(date_sk)`) into an `INSERT / APPEND` pattern. Each record performs a cached lookup against conformed dimensions to retrieve surrogate keys; failure to find a match results in assignment to the **Unknown Member (-1)**.
-
-### 12.2.1 Advanced Handling Logic
-
--   **Late-Arriving Dimensions:** If a sales record arrives with a `store_id` not yet present in `Dim_Store`, the record is assigned `store_sk = -1`. A post-load background process (Lookup Reconciliation) periodically identifies these orphaned records and re-processes them once the dimension record arrives.
--   **Data Quarantine:** Rows where `OK = 0` or essential keys (UPC, Store) are non-numeric are redirected to a **Quarantine / Error Table**. This prevents pipeline failure while allowing data quality teams to audit rejected records.
--   **Surrogate Key Management:** All keys are system-generated `INT IDENTITY`. This decouples the warehouse from source natural key changes and optimizes join performance through consistent integer comparisons.
--   **Data Cleansing:** Standard string operations (`TRIM`, `UPPER`) are applied to all descriptive text attributes to ensure consistent grouping (e.g., 'dairy' vs 'Dairy').
-
-## 12.3 Data Validation & QA Framework
-
-To ensure 100% financial accuracy, the system implements a multi-tier reconciliation framework:
-
--   **Row Count Reconciliation:** Post-load audit queries verify that `SUM(rows in Facts) + SUM(rows in Rejects) = SUM(rows in Source)`.
--   **Metric Balancing:** A nightly job compares `SUM(MOVE)` from `wlnd.csv` against `SUM(units_sold)` in `Fact_Weekly_Sales` to ensure no data loss during transformation.
--   **Referential Integrity Check:** Automated scripts verify that no record in any fact table has an orphaned FK (keys that do not exist in the dimension table).
-
-## 12.4 Fact Table Size & Storage Estimation
-
-Given the multi-year history of DFF transactions, the warehouse is designed for horizontal scale:
-
--   **Fact_Weekly_Sales:** Estimated at **1.2 million rows** per year (~12,000 products across ~100 stores). Total volume over 5 years exceeds 6 million records.
--   **Fact_Customer_Traffic:** Smaller volume of **~5,000 rows** per year (93 stores x 52 weeks).
--   **Storage ROI:** By utilizing Columnstore compression (average 10:1 ratio), a 5GB raw dataset compresses to approximately **500MB** on disk, significantly increasing the "hot" data cache-hit ratio for the SQL Server engine.
-
-**Aggregation Strategy**
-
-For frequently accessed summary reports (e.g., total store sales by month), the design implements **Materialized Indexed Views**. These pre-aggregate common queries so that the optimizer can satisfy requests from the pre-computed view without scanning the base fact table.
-
-**Data Standardization Plan**
-
-The ETL pipeline uses **SQL Server Integration Services (SSIS)** to enforce data quality:
-
-- Drop records where `OK = 0` (system-flagged as corrupted)
-- Reject records where `MOVE <= 0` or `PRICE <= 0` (invalid transactions)
-- Map null/blank `SALE` codes to 'NONE' (representing valid "No Promotion" business state)
-- Trim special characters from product descriptions
-
-**Storage and Partitioning Plan**
-
-Both fact tables are **table-partitioned** on `date_sk`, with each partition corresponding to a calendar year or seasonal block. This enables **partition pruning**: when a query filters by season or year (e.g., `WHERE d.season = 'Summer'`), the engine skips all irrelevant partitions, reading only matching data segments. This ensures sub-second query responsiveness even as the warehouse grows to hundreds of millions of rows.
+Both fact tables are **table-partitioned** on `date_sk` by calendar year, enabling partition pruning so that time-filtered queries (e.g., `WHERE d.calendar_year = 1993`) read only matching partitions. For frequently accessed summary reports (e.g., monthly store revenue dashboards), the design implements **Materialized Indexed Views** that pre-aggregate common roll-ups so the optimizer can satisfy requests from pre-computed results without scanning the base fact tables. The ETL pipeline enforces data quality via SSIS: records where `OK = 0` are dropped, rows with `MOVE <= 0` or `PRICE <= 0` are rejected, null/blank `SALE` codes are mapped to `'NONE'`, and `TRIM`/`UPPER` operations standardize descriptive text. Surrogate keys are system-generated `INT IDENTITY` values, decoupling the warehouse from source natural key changes. Dimension tables use **SCD Type 1** (overwrite), and fact tables use an **incremental append** strategy (`WHERE date_sk > MAX(date_sk)`). Any fact row that fails a dimension lookup is assigned the **Unknown Member (SK = -1)**, preserving data completeness and enabling late-arriving dimension reconciliation without reprocessing historical loads.
 
 # 13. Validation and Data Integrity Checks
 
@@ -745,11 +675,11 @@ The unknown member (-1) strategy ensures that the "Outer Join" problem is elimin
 
 This section presents the Entity-Relationship Diagram (ERD) for the DFF data warehouse star schema, documenting all table structures, primary/foreign key relationships, and cardinality constraints.
 
-## 13.1 Schema Overview
+## 14.1 Schema Overview
 
 This design follows a **pure star schema with no snowflaking**. Two fact tables sit at the center, surrounded by four dimension tables. `Dim_Store` and `Dim_Date` serve as conformed dimensions shared across both fact tables, while `Dim_Product` and `Dim_Promotion` connect exclusively to `Fact_Weekly_Sales`. All relationships are one-to-many (1:M). Strict grain isolation is enforced: `Fact_Weekly_Sales` operates at Store x Product x Week while `Fact_Customer_Traffic` operates at Store x Week.
 
-## 13.2 Relationship Cardinality
+## 14.2 Relationship Cardinality
 
 *Table 10: ERD Relationship Summary*
 
@@ -762,11 +692,11 @@ This design follows a **pure star schema with no snowflaking**. Two fact tables 
 | Dim_Store (1) -> (M) Fact_Customer_Traffic | 1:M | Store appears in many traffic rows |
 | Dim_Date (1) -> (M) Fact_Customer_Traffic | 1:M | Week appears in many traffic rows |
 
-## 13.3 Annotated Star Schema Architecture
+## 14.3 Annotated Star Schema Architecture
 
 ![DFF Star Schema ERD](/Users/ujjwal/.gemini/antigravity/brain/086d8f45-9659-4c5d-b4be-eeb987e0a655/professional_star_schema_erd_1773883282130.png)
 
-### 13.3.1 ERD Navigation Guide
+### 14.3.1 ERD Navigation Guide
 
 To interpret the architectural diagram above, follow these industry-standard conventions:
 - **Central Hubs:** The blue-shaded rectangles represent **Fact Tables**, containing quantitative measures and foreign keys.
@@ -774,7 +704,7 @@ To interpret the architectural diagram above, follow these industry-standard con
 - **Dimensional Spines:** `Dim_Product` and `Dim_Promotion` provide descriptive context exclusively for sales transactions.
 - **Cardinality:** The Crow's Foot notation (0..N) indicates a **one-to-many relationship**, where a single dimension record (e.g., one Store) can reference millions of transaction rows.
 
-### 13.3.2 PK/FK Notation Details
+### 14.3.2 PK/FK Notation Details
 
 ```text
 +----------------------+
@@ -823,7 +753,7 @@ To interpret the architectural diagram above, follow these industry-standard con
 
 *Technically detailed Mermaid specifications are provided in Section 18.2 for system implementation.*
 
-## 13.5 Architectural Design Rationale
+## 14.5 Architectural Design Rationale
 
 The schema diagram above encodes four fundamental architectural principles that collectively guarantee query correctness and analytical flexibility:
 
@@ -837,7 +767,7 @@ The schema diagram above encodes four fundamental architectural principles that 
 
 ---
 
-# 14. Business Value and Strategic Impact
+# 15. Business Value and Strategic Impact
 
 The DFF Data Warehouse is not merely a technical repository; it is a strategic asset designed to drive operational efficiency and revenue growth.
 
@@ -849,7 +779,7 @@ By centralizing these insights into a Kimball-compliant bus architecture, DFF mo
 
 ---
 
-# 15. Data Source Summary
+# 16. Data Source Summary
 
 The schema ingests four distinct DFF operational flat files. The table below summarizes each source, its purpose, key attributes, and its role within the data warehouse.
 
@@ -866,7 +796,7 @@ The schema ingests four distinct DFF operational flat files. The table below sum
 
 ---
 
-# 16. Limitations and Future Roadmap
+# 17. Limitations and Future Roadmap
 
 While the current architecture provides a robust foundation for DFF analytics, we have identified several paths for future enterprise evolution:
 
@@ -877,23 +807,21 @@ While the current architecture provides a robust foundation for DFF analytics, w
 
 ---
 
-# 17. Conclusion
+# 18. Conclusion
 
 This report presents a complete logical and physical Data Warehouse design for Dominick's Finer Foods, built to answer Group 3's five business questions with mathematical precision and analytical flexibility.
 
-The central design decision—maintaining two separate fact tables with distinct grains—is a **mandatory requirement** driven by the incompatible granularity of checkout transactions (Store x Product x Week) and customer traffic (Store x Week). Combining these grains would inflate traffic counts by the number of products per store-week, rendering BQ5 unanswerable. By isolating each business process and linking them through conformed dimensions (`Dim_Store` and `Dim_Date`), the architecture enables safe cross-process analysis using Kimball's drill-across query pattern.
+The central design decision—maintaining two separate fact tables with distinct grains—is a **mandatory requirement** driven by the incompatible granularity of checkout transactions (Store × Product × Week) and customer traffic (Store × Week). Combining these grains would inflate traffic counts by the number of products per store-week, rendering BQ5 unanswerable. By isolating each business process and linking them through conformed dimensions (`Dim_Store` and `Dim_Date`), the architecture enables safe cross-process analysis using Kimball's drill-across query pattern.
 
-The star schema deliberately avoids snowflaking. Product categories are denormalized into `Dim_Product`, and promotional labels are denormalized into `Dim_Promotion`. This keeps the schema flat, minimizes join complexity, and maximizes query performance.
+The star schema deliberately avoids snowflaking. Product categories are denormalized into `Dim_Product`, and promotional labels are denormalized into `Dim_Promotion`. This keeps the schema flat, minimizes join complexity, and maximizes query performance. Four dimension tables provide complete descriptive context: `Dim_Store` (geographic/demographic), `Dim_Date` (temporal/seasonal), `Dim_Product` (item/category), and `Dim_Promotion` (promotional classification). Each dimension uses system-generated surrogate keys, with an Unknown Member at SK = -1 ensuring referential integrity even for late-arriving data.
 
-The physical design leverages SQL Server 2016 Columnstore Indexes for efficient analytical scanning, Materialized Indexed Views for pre-aggregated dashboards, and Table Partitioning for scalable time-series data management. Together, these features ensure fast, accurate results as data grows over time.
-
-This design transforms raw DFF operational flat files into actionable retail intelligence.
+The physical design leverages SQL Server 2016 Clustered Columnstore Indexes for efficient analytical scanning with 90% I/O reduction, Nonclustered B-tree overlays for point-lookups, Materialized Indexed Views for pre-aggregated dashboards, and Table Partitioning by calendar year for scalable time-series management. The ETL pipeline enforces data quality through staging, validation, and incremental loading, transforming raw DFF operational flat files into actionable retail intelligence.
 
 ---
 
-# 18. Appendix / Assumptions
+# 19. Appendix / Assumptions
 
-## 18.1 Technical Assumptions
+## 19.1 Technical Assumptions
 
 **Revenue Formula:**
 Total dollar sales are calculated as `(PRICE x MOVE) / QTY`. The `QTY` field represents package quantity (e.g., a 6-pack has QTY = 6). Dividing by QTY normalizes multi-pack pricing so that `dollar_sales` reflects actual transaction revenue. We assume `QTY` is correctly populated.
@@ -913,7 +841,7 @@ Records with `OK = 0` are permanently removed during staging. Records with `MOVE
 **Profit Interpretation:**
 The surrogate key `-1` is reserved for unresolved dimension lookups. This ensures referential integrity in fact tables even when attribute data is late-arriving or missing from source.
 
-## 18.2 Mermaid ER Diagram Specification
+## 19.2 Mermaid ER Diagram Specification
 
 ```mermaid
 erDiagram
@@ -931,6 +859,8 @@ erDiagram
         int calendar_month
         int calendar_quarter
         int calendar_year
+        varchar season
+        boolean holiday_flag
     }
     Dim_Product {
         int product_sk PK
