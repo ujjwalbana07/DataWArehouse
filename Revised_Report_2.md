@@ -279,10 +279,9 @@ Fact tables store the quantitative performance metrics produced by each business
 | `units_sold` | Additive | `wlnd.MOVE` | Volume analysis, demand forecasting |
 | `retail_price` | Non-additive | `wlnd.PRICE` | Price point analysis (use AVG not SUM) |
 | `dollar_sales` | Additive | Derived: `(PRICE x MOVE) / QTY` | Revenue reporting, trend analysis |
-
-*Revenue Formula Note:* The `QTY` field represents the package quantity (e.g., a 6-pack has QTY = 6). Dividing by QTY normalizes multi-pack pricing so that `dollar_sales` reflects actual per-transaction revenue rather than per-unit shelf price. Without this normalization, multi-pack items would report artificially inflated revenue.
-
 | `profit_margin_pct` | Non-additive | `wlnd.PROFIT` | Profitability analysis (use AVG) |
+
+*Revenue Formula Note:* The `QTY` field represents the package quantity (e.g., a 6-pack has QTY = 6, meaning 6 units at one shelf price). The formula `(PRICE × MOVE) / QTY` normalizes multi-pack pricing so that `dollar_sales` reflects total weekly revenue for that product-store combination. Without this normalization, multi-pack items would report inflated revenue because `PRICE` already reflects the multi-pack shelf price.
 
 #### Fact_Customer_Traffic
 
@@ -492,7 +491,7 @@ GROUP BY s.income_band, s.store_zone
 ORDER BY s.income_band, avg_margin DESC;
 ```
 
-**Technical Justification:** The `COUNT(DISTINCT store_id)` is a semi-additive calculation that allows the analyst to see the coverage of each socioeconomic cluster.
+**Technical Justification:** `COUNT(DISTINCT store_id)` provides a non-additive cardinality measure that reveals the number of distinct retail locations within each socioeconomic cluster, giving analysts context for the magnitude of each group's revenue.
 
 ---
 
@@ -619,7 +618,7 @@ This table documents the transformation logic from staging into the final star s
 | `stg_Movement`| `WEEK_ID` | INT | Derive | Extract year from computed date | REJECT | N/A | `Dim_Date` | `calendar_year` |
 | `stg_Movement`| `WEEK_ID` | VARCHAR | Derive | Map month to seasonal category | SET DEFAULT | 'Unknown' | `Dim_Date` | `season` |
 | `stg_Movement`| `WEEK_ID` | BIT | Derive | Set 1 for Thanksgiving/Christmas weeks | SET DEFAULT | 0 | `Dim_Date` | `holiday_flag` |
-| `stg_Movement`| `SALE_CODE`| CHAR | Derive | Generate SQL IDENTITY surrogate PK | REJECT | N/A | `Dim_Promotion` | `promotion_sk` |
+| `stg_Movement`| `SALE_CODE`| CHAR | Derive | Generate surrogate PK from distinct SALE_CODE values | REJECT | N/A | `Dim_Promotion` | `promotion_sk` |
 | `stg_Movement`| `SALE_CODE`| CHAR | Copy | Load valid codes (B, C, S, NONE) | SET DEFAULT | 'NONE' | `Dim_Promotion` | `sale_code` |
 | `stg_Movement`| `SALE_CODE`| VARCHAR | Derive | Map code to descriptive label | SET DEFAULT | 'No Promo' | `Dim_Promotion` | `promotion_type` |
 | `stg_Movement`| `STORE_ID` | INT | Lookup | Match store_id → retrieve store_sk | USE UNKNOWN | -1 | `Fact_Weekly_Sales` | `store_sk` |
@@ -632,7 +631,7 @@ This table documents the transformation logic from staging into the final star s
 | `stg_Movement`| `PROFIT` | DECIMAL | Copy | Load non-additive margin percentage | SET DEFAULT | 0.00 | `Fact_Weekly_Sales` | `profit_margin_pct`|
 | `stg_Ccount` | `STORE_ID` | INT | Lookup | Match store_id → retrieve store_sk | USE UNKNOWN | -1 | `Fact_Customer_Traffic` | `store_sk` |
 | `stg_Ccount` | `WEEK_ID` | INT | Lookup | Match week_id → retrieve date_sk | USE UNKNOWN | -1 | `Fact_Customer_Traffic` | `date_sk` |
-| `stg_Ccount` | `CUSTCOUN` | INT | Copy | Load additive traffic count | SET DEFAULT | 0 | `Fact_Customer_Traffic` | `customer_count` |
+| `stg_Ccount` | `CUSTOMER_COUNT` | INT | Copy | Load additive traffic count | SET DEFAULT | 0 | `Fact_Customer_Traffic` | `customer_count` |
 
 ### Unknown Member Strategy (SK = -1)
 
