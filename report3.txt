@@ -1,0 +1,2000 @@
+Design and Implementation of a Data Warehouse 
+for a Retail Store 
+Integrated Report 3: Requirements Analysis, Data Design, and ETL 
+Implementation using SSIS 
+ISTM 637 – Data Warehousing | Spring 2026 
+Project Group: Group 3 
+Role Name 
+Member Ujjwal Bana 
+Member Rishabh Rohil 
+Member Rohit Sunil Shejole 
+Date: April 8, 2026 
+ 
+Table of Contents 
+1. Introduction  
+a. 1.1 Dominick's Finer Foods and Project Context 
+b. 1.2 Problems Addressed by the Data Warehouse 
+c. 1.3 Understanding of the Data 
+d. 1.4 Metadata for All OLTP Source Files 
+e. 1.5 ERD for Source Data 
+f. 1.6 Data Understanding Exhibits 
+2. Subject Area Understanding  
+a. 2.1 Literature Review 
+b. 2.2 Problems Relevant to DFF 
+c. 2.3 Business Questions and Data Support 
+3. Overview of Kimball's Methodology 
+4. Data Warehouse Logical Design (Star Schema)  
+a. 4.1 Application of Kimball Methodology 
+b. 4.2 Dimension Bus Matrix 
+c. 4.3 Grain Definition 
+d. 4.4 Dimension and Fact Identification 
+e. 4.5 Star Schema Table Definitions 
+f. 4.6 Schema Justification for BQ1–BQ5 
+g. 4.7 Mapping Table #1: Source Files → Staging (Excel) 
+h. 4.8 Mapping Table #2: Staging → Data Mart (Excel) 
+i. 4.9 Physical Design Plan 
+j. 4.10 Star Schema ERD 
+5. ETL Plan  
+a. 5.1 Target Data Needed in the Data Warehouse 
+b. 5.2 Data Sources Available from DFF 
+c. 5.3 Data Mappings (Excel — Source → Staging → Data Mart) 
+d. 5.4 Comprehensive Data Extraction Rules 
+e. 5.5 Data Transformation and Cleansing Rules 
+f. 5.6 Plan for Aggregate Tables 
+g. 5.7 Organization of Data Staging Area 
+h. 5.8 Procedures for All Data Extractions and Loadings 
+i. 5.9 ETL for Dimension Tables 
+j. 5.10 ETL for Fact Tables 
+6. Implementation of the ETL Plan  
+a. 6.1 Database Creation and SSIS Connection Setup 
+b. 6.2 All SQL Statements Used 
+c. 6.3 SSIS Package 1: Load_Staging — Design and Execution 
+d. 6.4 SSIS Package 2: Load_Dimensions — Design and Execution 
+e. 6.5 SSIS Package 3: Load_Facts — Design and Execution 
+f. 6.6 Data Granularity at the Independent Data Mart Level 
+g. 6.7 Before-and-After Table Snapshots 
+h. 6.8 Validation and Integrity Checks 
+i. 6.9 BQ Validation Queries and Results 
+j. 6.10 List of Temporary Tables Created and Dropped 
+k. 6.11 Special ETL Techniques Implemented 
+7. Business Value and Strategic Impact 
+8. Conclusion 
+9. References 
+10. Appendix 
+ 
+1. Introduction 
+1.1 Dominick's Finer Foods and Project Context 
+Dominick's Finer Foods (DFF) was a Chicago-area supermarket chain operating over 100 stores. From 1989 
+to 1994, the University of Chicago Booth School of Business partnered with Dominick's to conduct store-
+level research on shelf management and pricing across more than 25 product categories. Approximately 
+eight years of store-level data covering over 3,500 UPCs became available through the James M. Kilts 
+Center for Marketing (2013). 
+1.2 Problems Addressed by the Data Warehouse 
+Operational OLTP systems are optimized for transaction processing, not analytical queries (Sen, 2026). This 
+data warehouse addresses four core problems for DFF: (1) cross-dimensional analytics across stores, time, 
+and products, (2) shelf and pricing decisions requiring consistent measures like dollar sales = Price × Move / 
+Qty, (3) integration of multiple disparate source files (Movement, Demographics, UPC, Customer Count) 
+into a single analytical view, and (4) enabling OLAP-style business intelligence (drill-down, roll-up, slice-
+and-dice) that is impractical on normalized OLTP schemas. 
+1.3 Understanding of the Data 
+Four primary CSV source files are used: 
+• wlnd.csv (Movement): Weekly store-UPC transactions for Laundry Detergents. Key fields: STORE, 
+UPC, WEEK, MOVE, QTY, PRICE, SALE, PROFIT, OK. 
+• upclnd.csv (UPC): Product master data. Key fields: UPC, COM_CODE, DESCRIP, SIZE, CASE, 
+NITEM. 
+• demo.csv (Demographics): One row per store with census-based variables. Key fields: STORE, 
+ZONE, INCOME (log of median income), EDUC. 
+• ccount.csv (Customer Count): Store-level customer traffic and department sales. Key fields: 
+STORE, WEEK, CUSTCOUN, GROCERY, and department-level columns. 
+1.4 Metadata for All OLTP Source Files 
+Table 1: Customer Count (CCOUNT.csv) Metadata 
+Variable Description Type 
+DATE Date of observation Char 6 
+WEEK Week number Num 8 
+STORE Store code Num 8 
+CUSTCOUN Customer count Num 8 
+GROCERY Grocery sales ($) Num 8 
+GROCCOUP Grocery coupons redeemed Num 8 
+DAIRY / DAIRCOUP Dairy sales / coupons Num 8 
+MEAT / MEATCOUP Meat sales / coupons Num 8 
+PRODUCE / PRODCOUP Produce sales / coupons Num 8 
+BAKERY / BAKCOUP Bakery sales / coupons Num 8 
+DELI / DELICOUP Deli sales / coupons Num 8 
+FISH / FISHCOUP Fish sales / coupons Num 8 
+HABA / HABACOUP Health & beauty / coupons Num 8 
+GM / GMCOUP General merchandise / coupons Num 8 
+PHARMACY / PHARCOUP Pharmacy sales / coupons Num 8 
+PROMO / PROMCOUP Promotion sales / coupons Num 8 
+MVPCLUB MVP club transactions Num 8 
+MANCOUP Manufacturer coupons Num 8 
+(Additional department columns: FROZEN, CHEESE, BEER, WINE, SPIRITS, COSMETIC, FLORAL, 
+BULK, CONVFOOD, BOTTLE, SALADBAR, VIDEO present in full file.) 
+Table 2: Demographics (DEMO.csv) Metadata 
+Variable Description 
+STORE Store code (PK) 
+ZONE Geographic/pricing zone 
+AGE9 % population under age 9 
+AGE60 % population over age 60 
+ETHNIC % Blacks & Hispanics 
+EDUC % college graduates 
+NOCAR % with no vehicles 
+INCOME Natural log of median household income 
+HSIZEAVG Average household size 
+WORKWOM % working women (full-time) 
+HVAL150 % households valued > $150K 
+HVALMEAN Mean household value 
+SINGLE % singles 
+RETIRED % retired 
+UNEMP % unemployed 
+POVERTY % with income < $15K 
+NWHITE % non-white 
+Note: INCOME stores ln(median income). Must apply EXP() during ETL to recover dollar values. 
+Table 3: UPC (UPCLND.csv) Metadata 
+Variable Description Type 
+UPC UPC barcode number Num 8 
+COM_CODE Commodity code Num 8 
+NITEM Dominick's item code Num 8 
+DESCRIP Product name (may contain #, ~, <, $, *) Char 20 
+SIZE Product size Char 6 
+CASE Items per case Num 8 
+Table 4: Movement (wlnd.csv) Metadata 
+Variable Description Type 
+UPC UPC number (FK to UPC file) Num 8 
+STORE Store number Num 3 
+WEEK Week number Num 3 
+MOVE Units sold Num 8 
+PRICE Retail price Num 8 
+QTY Pricing bundle quantity (e.g., 2-for-$5 → QTY=2) Num 3 
+PROFIT Gross margin in cents per dollar (25.3 = 25.3%) Num 8 
+SALE B=Bonus Buy, C=Coupon, S=Simple reduction Char 8 
+OK 1=valid, 0=suspect (do not use) Num 3 
+Key formula: Dollar Sales = (PRICE × MOVE) / QTY. Only rows with OK = 1 are used. 
+1.5 ERD for Source Data 
+>>> INSERT: Visio ERD diagram (Figure 1) <<< 
+The source ERD shows five entities: Store (conceptual — codes appear in Ccount, Demo, Movement), 
+Ccount (store FK, week, department measures), Demographics (store FK, census variables), UPC (upc PK, 
+product attributes), and Movement (store FK, upc FK, week FK, transaction measures). Week Decode maps 
+week numbers to calendar dates. 
+Key relationships: Store → Ccount (1:N), Store → Demographics (1:1), Store → Movement (1:N), UPC → 
+Movement (1:N), Week Decode → Movement (1:N), Week Decode → Ccount (1:N). There is NO direct 
+Ccount–UPC or UPC–Week Decode relationship. 
+1.6 Data Understanding Exhibits 
+>>> INSERT: Figure 2 — Laundry Detergents: Total Sales by Store (Excel bar chart) <<< >>> 
+INSERT: Figure 3 — Laundry Detergents: Sales by Week (Excel line chart) <<< >>> INSERT: 
+Figure 4 — Laundry Detergents: Average Margin by Store (Excel bar chart) <<< >>> INSERT: 
+Figure 5 — Customer Count vs. Grocery Sales by Store (Excel scatter plot for BQ5) <<< 
+ 
+2. Subject Area Understanding 
+2.1 Literature Review 
+Five papers using Dominick's data were reviewed: 
+Hoch et al. (1995) found demographics explain ~67% of store-level price elasticity. DW implication: Join 
+Movement to Demographics for zone pricing. 
+Chevalier et al. (2003) found counter-cyclical pricing — retail margins fall during demand peaks. DW 
+implication: Time-variant margin/volume analysis required. 
+Chintagunta (2002) decomposed retail prices showing pricing factors vary across brands. DW implication: 
+Product and category dimensions needed. 
+Dhar & Hoch (1997) found store brand share depends on quality, breadth, and pricing. DW implication: 
+Category assortment analysis across stores. 
+Peltzman (2000) demonstrated asymmetric price adjustment using Dominick's data. DW implication: 
+Consistent cost/margin definitions and time-series capability. 
+2.2 Problems Relevant to DFF 
+Six problems motivate the warehouse: (1) price/promotion optimization, (2) store-level price elasticity and 
+zone pricing, (3) category and store performance tracking, (4) margin vs. volume trade-offs, (5) assortment 
+and shelf allocation, (6) customer traffic and conversion analysis. 
+2.3 Business Questions and Data Support 
+Ten BQs were identified. Group 3 is assigned BQ1–BQ5 (★): 
+BQ Question Dimensions Measures Data Support 
+★1 Sales/profit by store and time Store, Week Dollar Sales, 
+Profit 
+Movement; Exhibits 
+A, B 
+★2 Sales/margin by product over 
+time 
+UPC/Commodity, 
+Week Sales, Margin Movement + UPC 
+★3 Effect of promotions (B/C/S) Sale code, Store, 
+Week Units, Sales Movement SALE 
+field 
+★4 Performance by 
+demographics/zone Store demos, Zone Sales, Margin Movement + Demo 
+★5 Customer count vs. sales Store, Week CUSTCOUN, 
+Sales Ccount + Movement 
+6 Margin vs. volume UPC/Commodity Avg Margin, 
+Volume Movement 
+7 Price tier comparison Price tier Sales, Margin Movement + store 
+master 
+8 Top/bottom stores and products Store or UPC Total Sales, Profit Movement 
+9 Seasonal patterns Week→calendar Sales trends Movement + Week 
+decode 
+10 Category performance across 
+stores Commodity, Store Sales, Units Movement + UPC 
+ 
+3. Overview of Kimball's Methodology 
+The design follows Ralph Kimball's Bottom-Up Dimensional Modeling methodology (Kimball & Ross, 
+2013). The four-step process: 
+Step 1 — Select the Business Process. Identify the real-world operational event generating measurable 
+data. 
+Step 2 — Declare the Grain. Define what one row in the fact table represents. This is the most critical step 
+— incorrect grain causes double-counting. 
+Step 3 — Identify the Dimensions. Determine the "who, what, where, when, how" context for filtering and 
+grouping. 
+Step 4 — Identify the Facts. Isolate numeric measures classified by additivity: additive (safe to SUM 
+across all dimensions), semi-additive (across some), non-additive (ratios — use AVG only). 
+Kimball's star schema minimizes joins for analytical queries. Conformed dimensions shared across data 
+marts enable drill-across queries. This bus architecture suits DFF because the two business processes 
+(checkout and traffic) operate at different grains and must be linked through shared Dim_Store and 
+Dim_Date dimensions. 
+ 
+4. Data Warehouse Logical Design 
+4.1 Application of Kimball Methodology 
+Process A — Weekly POS Checkout (wlnd.csv): Records units sold, price, margin, and promotion per 
+product per store per week. Supports BQ1–BQ4. 
+Process B — Facility Entrance Counting (ccount.csv): Records total customer traffic per store per week. 
+Supports BQ5. 
+Grain: 
+• Fact_Weekly_Sales: One row per Store × Product (UPC) × Week 
+• Fact_Customer_Traffic: One row per Store × Week 
+Why two fact tables are mandatory: If traffic counts (Store × Week) were embedded into the sales table 
+(Store × Product × Week), each store's weekly customer count would replicate across every product row. 
+Example: Store #5 has 10,000 visitors and 5,000 products in Week 278. Merging → SUM(customer_count) 
+= 50,000,000 instead of 10,000. This grain-violation error makes BQ5 unanswerable. 
+4.2 Dimension Bus Matrix 
+Business Process Dim_Store Dim_Date Dim_Product Dim_Promotion BQs 
+Fact_Weekly_Sales ✓ ✓ ✓ ✓ BQ1–BQ4 
+Fact_Customer_Traffic ✓ ✓ — — BQ5 
+Dim_Store and Dim_Date are conformed across both facts (enabling drill-across for BQ5). 
+4.3 Grain Definition 
+Fact_Weekly_Sales: One row = one Store × one UPC × one Week. Fact_Customer_Traffic: One row = 
+one Store × one Week. 
+4.4 Dimension and Fact Identification 
+Dim_Store (Conformed): store_id, store_zone, median_income (EXP of log-income), education_pct, 
+income_band (High/Medium/Low). Source: DEMO.csv. 
+Dim_Date (Conformed): week_id, calendar_date, calendar_month, calendar_quarter, calendar_year, 
+season, holiday_flag. Derived from epoch + (WEEK_ID−1) × 7 days, epoch = Sept 14, 1989. 
+Dim_Product: upc_id, item_description, commodity_code (denormalized — no snowflaking). Source: 
+UPCLND.csv. 
+Dim_Promotion: sale_code (B/C/S/NONE), promotion_type. 4 rows. sale_code = 'NONE' is a valid 
+business state (no promotion); SK = −1 is an ETL lookup failure (Unknown Member). 
+Fact_Weekly_Sales measures: units_sold (Additive), retail_price (Non-additive), dollar_sales (Additive, 
+derived), profit_margin_pct (Non-additive — stored as cents per dollar, use AVG). 
+Fact_Customer_Traffic measures: customer_count (Additive). 
+4.5 Star Schema Table Definitions 
+Fact_Weekly_Sales 
+Column Data Type Key Source Additivity 
+sales_fact_id INT IDENTITY PK System — 
+store_sk INT FK→Dim_Store Lookup — 
+date_sk INT FK→Dim_Date Lookup — 
+product_sk INT FK→Dim_Product Lookup — 
+promotion_sk INT FK→Dim_Promotion Lookup — 
+units_sold INT Measure wlnd.MOVE Additive 
+retail_price DECIMAL(10,2) Measure wlnd.PRICE Non-
+additive 
+dollar_sales DECIMAL(12,2) Measure (PRICE×MOVE)/QTY Additive 
+profit_margin_pct DECIMAL(5,2) Measure wlnd.PROFIT Non-
+additive 
+Fact_Customer_Traffic 
+Column Data Type Key Source Additivity 
+traffic_fact_id INT IDENTITY PK System — 
+store_sk INT FK→Dim_Store Lookup — 
+date_sk INT FK→Dim_Date Lookup — 
+customer_count INT Measure CCOUNT.CUSTCOUN Additive 
+Dim_Store 
+Column Data Type Key Source 
+store_sk INT IDENTITY PK System 
+store_id INT NK DEMO.STORE 
+store_zone INT Attr DEMO.ZONE 
+median_income DECIMAL(12,2) Attr EXP(DEMO.INCOME) 
+education_pct DECIMAL(5,4) Attr DEMO.EDUC 
+income_band VARCHAR(10) Attr Derived CASE 
+Dim_Date 
+Column Data Type Key Source 
+date_sk INT IDENTITY PK System 
+week_id INT NK wlnd.WEEK 
+calendar_date DATE Attr Derived 
+calendar_month INT Attr MONTH(calendar_date) 
+calendar_quarter INT Attr DATEPART(QUARTER) 
+calendar_year INT Attr YEAR(calendar_date) 
+season VARCHAR(10) Attr Derived from month 
+holiday_flag BIT Attr Derived 
+Dim_Product 
+Column Data Type Key Source 
+product_sk INT IDENTITY PK System 
+upc_id BIGINT NK UPC.UPC 
+item_description VARCHAR(100) Attr UPC.DESCRIP (cleaned) 
+commodity_code INT Attr UPC.COM_CODE 
+Dim_Promotion 
+Column Data Type Key Source 
+promotion_sk INT IDENTITY PK System 
+sale_code VARCHAR(10) NK wlnd.SALE 
+promotion_type VARCHAR(30) Attr Derived label 
+4.6 Schema Justification for BQ1–BQ5 
+BQ1: SUM(dollar_sales), AVG(profit_margin_pct) from Fact_Weekly_Sales, joined to Dim_Store and 
+Dim_Date. Roll-up from Store×Product×Week to Store×Quarter. 
+BQ2: SUM(units_sold), SUM(dollar_sales), AVG(profit_margin_pct) joined to Dim_Product 
+(commodity_code) and Dim_Date. Trend analysis by category over time. 
+BQ3: SUM(units_sold), SUM(dollar_sales) joined to Dim_Promotion. Dice by promotion_type to compare 
+promoted vs. non-promoted. 
+BQ4: SUM(dollar_sales), AVG(profit_margin_pct) joined to Dim_Store (income_band, store_zone). Dice 
+by demographic segment. 
+BQ5: Drill-across — pre-aggregate Fact_Weekly_Sales to Store×Week (eliminating product dimension via 
+SUM), then join to Fact_Customer_Traffic on conformed Dim_Store and Dim_Date keys. No fan-out 
+because both are at Store×Week after aggregation. 
+4.7 Mapping Table #1: Source Files → Staging Tables 
+>>> INSERT: Excel screenshot of Mapping Table #1 (see below for content) <<< 
+This table was prepared in Microsoft Excel per the assignment requirement. The screenshot of the Excel 
+workbook is shown above. The content is replicated below for readability. 
+Source 
+File 
+Source 
+Column 
+Data 
+Type 
+Mapping 
+Function 
+Staging 
+Table Staging Column Notes 
+wlnd.csv STORE INT Copy stg_Movem
+ent STORE_ID REJECT 
+if NULL 
+wlnd.csv UPC BIGINT Copy stg_Movem
+ent UPC_ID REJECT 
+if NULL 
+wlnd.csv WEEK INT Copy stg_Movem
+ent WEEK_ID REJECT 
+if NULL 
+wlnd.csv MOVE INT Filter: must be > 0 stg_Movem
+ent MOVE REJECT 
+if ≤ 0 
+wlnd.csv QTY INT Derived Column: 
+ISNULL → 1 
+stg_Movem
+ent QTY 
+Default 
+1 if 
+NULL/0 
+wlnd.csv PRICE DECIMA
+L Filter: must be > 0 stg_Movem
+ent PRICE REJECT 
+if ≤ 0 
+wlnd.csv SALE CHAR 
+Derived Column: 
+TRIM, UPPER, 
+blank→'NONE' 
+stg_Movem
+ent SALE_CODE Default 
+'NONE' 
+wlnd.csv PROFIT DECIMA
+L Copy stg_Movem
+ent PROFIT Default 
+0.00 
+wlnd.csv OK INT Conditional Split: 
+OK == 1 only 
+stg_Movem
+ent OK_FLAG 
+REJECT 
+if OK = 
+0 
+upclnd.c
+sv UPC BIGINT Copy stg_UPC UPC_CODE REJECT 
+if NULL 
+upclnd.c
+sv DESCRIP VARCH
+AR 
+Derived Column: 
+TRIM + 
+REPLACE(#,~,<,
+$,*) 
+stg_UPC ITEM_DESCRIPTI
+ON 
+Default 
+'Unknow
+n' 
+upclnd.c
+sv 
+COM_CO
+DE INT Copy stg_UPC COMMODITY_CO
+DE 
+Default 
+−1 
+upclnd.c
+sv NITEM INT Copy stg_UPC NITEM Default 
+−1 
+upclnd.c
+sv SIZE VARCH
+AR Copy stg_UPC PRODUCT_SIZE 
+Default 
+'Unknow
+n' 
+upclnd.c
+sv CASE INT Copy stg_UPC CASE_PACK Default 
+0 
+demo.cs
+v STORE INT Copy stg_Demo STORE_ID 
+REJECT 
+if 
+NULL/≤
+0 
+demo.cs
+v ZONE INT Copy stg_Demo STORE_ZONE REJECT 
+if NULL 
+demo.cs
+v INCOME DECIMA
+L 
+Copy (log value; 
+EXP applied later) stg_Demo LOG_INCOME REJECT 
+if NULL 
+demo.cs
+v EDUC DECIMA
+L Copy stg_Demo EDUCATION_PCT Default 
+0.00 
+ccount.c
+sv STORE INT Copy stg_Ccount STORE_ID 
+REJECT 
+if 
+NULL/≤
+0 
+ccount.c
+sv WEEK INT Copy stg_Ccount WEEK_ID 
+REJECT 
+if 
+NULL/≤
+0 
+ccount.c
+sv 
+CUSTCOU
+N INT Copy stg_Ccount CUSTOMER_COU
+NT 
+Default 
+0 
+4.8 Mapping Table #2: Staging Tables → Data Mart Tables 
+>>> INSERT: Excel screenshot of Mapping Table #2 (see below for content) <<< 
+Staging 
+Table Staging Column Mapping Function 
+DM 
+Table 
+Type 
+DM Table Name DM Column 
+stg_UPC UPC_CODE Copy (NK) Dimensi
+on Dim_Product upc_id 
+stg_UPC ITEM_DESCRIPT
+ION Copy Dimensi
+on Dim_Product item_descripti
+on 
+stg_UPC COMMODITY_C
+ODE Copy Dimensi
+on Dim_Product commodity_c
+ode 
+stg_Demo STORE_ID Copy (NK) Dimensi
+on Dim_Store store_id 
+stg_Demo STORE_ZONE Copy Dimensi
+on Dim_Store store_zone 
+stg_Demo LOG_INCOME 
+Derived Column: 
+EXP(LOG_INCOM
+E) 
+Dimensi
+on Dim_Store median_inco
+me 
+stg_Demo EDUCATION_PC
+T Copy Dimensi
+on Dim_Store education_pct 
+stg_Demo (median_income) 
+Derived Column: 
+CASE ≥60K→High, 
+≥35K→Med, 
+else→Low 
+Dimensi
+on Dim_Store income_band 
+stg_Movem
+ent + 
+stg_Ccount 
+WEEK_ID 
+Derived: UNION 
+DISTINCT + epoch 
+formula 
+Dimensi
+on Dim_Date week_id 
+(derived) calendar_date 
+Derived: 
+DATEADD(WEEK, 
+WEEK_ID−1, '1989-
+09-14') 
+Dimensi
+on Dim_Date calendar_date 
+(derived) calendar_date Derived: MONTH() Dimensi
+on Dim_Date calendar_mon
+th 
+(derived) calendar_date 
+Derived: 
+DATEPART(QUAR
+TER) 
+Dimensi
+on Dim_Date calendar_quar
+ter 
+(derived) calendar_date Derived: YEAR() Dimensi
+on Dim_Date calendar_year 
+(derived) calendar_month 
+Derived: CASE 3-
+5→Spring, 6-
+8→Summer, 9-
+11→Fall, 
+else→Winter 
+Dimensi
+on Dim_Date season 
+(derived) calendar_date 
+Derived: 1 if 
+Thanksgiving/Christ
+mas week, else 0 
+Dimensi
+on Dim_Date holiday_flag 
+(manual 
+entry) 'B' Static Insert: 'Bonus 
+Buy' 
+Dimensi
+on Dim_Promotion 
+sale_code, 
+promotion_ty
+pe 
+(manual 
+entry) 'C' Static Insert: 
+'Coupon' 
+Dimensi
+on Dim_Promotion 
+sale_code, 
+promotion_ty
+pe 
+(manual 
+entry) 'S' Static Insert: 'Simple 
+Reduction' 
+Dimensi
+on Dim_Promotion 
+sale_code, 
+promotion_ty
+pe 
+(manual 
+entry) 'NONE' Static Insert: 'No 
+Promotion' 
+Dimensi
+on Dim_Promotion 
+sale_code, 
+promotion_ty
+pe 
+stg_Movem
+ent STORE_ID 
+Lookup Transform: 
+match 
+Dim_Store.store_id 
+→ store_sk 
+Fact Fact_Weekly_Sale
+s store_sk 
+stg_Movem
+ent WEEK_ID 
+Lookup Transform: 
+match 
+Dim_Date.week_id 
+→ date_sk 
+Fact Fact_Weekly_Sale
+s date_sk 
+stg_Movem
+ent UPC_ID 
+Lookup Transform: 
+match 
+Dim_Product.upc_id 
+→ product_sk 
+Fact Fact_Weekly_Sale
+s product_sk 
+stg_Movem
+ent SALE_CODE 
+Lookup Transform: 
+match 
+Dim_Promotion.sale
+_code → 
+promotion_sk 
+Fact Fact_Weekly_Sale
+s promotion_sk 
+stg_Movem
+ent MOVE Copy Fact Fact_Weekly_Sale
+s units_sold 
+stg_Movem
+ent PRICE Copy Fact Fact_Weekly_Sale
+s retail_price 
+stg_Movem
+ent 
+PRICE, MOVE, 
+QTY 
+Derived Column: 
+(PRICE × MOVE) / 
+QTY 
+Fact Fact_Weekly_Sale
+s dollar_sales 
+stg_Movem
+ent PROFIT Copy (cents per 
+dollar, stored as-is) Fact Fact_Weekly_Sale
+s 
+profit_margin
+_pct 
+stg_Ccount STORE_ID 
+Lookup Transform: 
+match 
+Dim_Store.store_id 
+→ store_sk 
+Fact Fact_Customer_Tr
+affic store_sk 
+stg_Ccount WEEK_ID 
+Lookup Transform: 
+match 
+Dim_Date.week_id 
+→ date_sk 
+Fact Fact_Customer_Tr
+affic date_sk 
+stg_Ccount CUSTOMER_CO
+UNT 
+Aggregate: SUM 
+GROUP BY 
+STORE_ID, 
+WEEK_ID 
+Fact Fact_Customer_Tr
+affic 
+customer_cou
+nt 
+4.9 Physical Design Plan 
+Both fact tables use Clustered Columnstore Indexes (CCI) for 10:1 compression and batch-mode 
+aggregation. Nonclustered B-tree indexes are overlaid on store_sk and date_sk for ETL point-lookups. Fact 
+tables are partitioned by calendar_year on date_sk. Materialized Indexed Views pre-aggregate monthly store 
+revenue and weekly store sales for dashboard performance. Dimension tables use SCD Type 1 (overwrite), 
+appropriate since demographics are static 1990 Census data. All ETL uses SSIS with incremental append via 
+WHERE date_sk > MAX(existing). 
+4.10 Star Schema ERD 
+>>> INSERT: Visio star schema ERD diagram (Figure 6) <<< 
+The ERD shows two central fact tables (Fact_Weekly_Sales and Fact_Customer_Traffic) surrounded by 
+four dimensions. Dim_Store and Dim_Date are conformed (shared). Dim_Product and Dim_Promotion 
+connect only to Fact_Weekly_Sales. All relationships are 1:M from dimension to fact. 
+ 
+5. ETL Plan 
+All ETL operations are performed exclusively in the SSIS environment on SQL Server 2016 per assignment 
+requirements. No Python, Java, Excel, or other tools are used for data transformation or loading. 
+5.1 Target Data Needed in the Data Warehouse 
+The target database is Ujjwal_Group3_DW_Area on SQL Server 2016. It contains six tables: 
+Target Table Type Expected Rows Description 
+Dim_Store Dimension ~93 + 1 Unknown Store geographic/demographic context 
+Dim_Date Dimension ~400 + 1 Unknown Calendar attributes for week IDs 
+Dim_Product Dimension varies + 1 Unknown Product descriptions and categories 
+Dim_Promotion Dimension 4 + 1 Unknown Promotion type classification 
+Fact_Weekly_Sales Fact ~99,000+ Store × Product × Week transactions 
+Fact_Customer_Traffic Fact varies Store × Week customer traffic 
+All six tables must be populated. Dimensions load first (for surrogate key generation), then facts (which 
+perform surrogate key lookups against loaded dimensions). 
+5.2 Data Sources Available from DFF 
+The staging database is Ujjwal_Group3_Staging_Area on SQL Server 2016. Four CSV files feed into it: 
+Source 
+File Format Delimiter Records 
+(approx.) Key Fields Feeds Into 
+wlnd.csv 
+CSV, comma-
+delimited, 
+header row 
+, ~120,000+ 
+raw 
+STORE, UPC, WEEK, 
+MOVE, QTY, PRICE, 
+SALE, PROFIT, OK 
+stg_Movement → 
+Fact_Weekly_Sales 
+upclnd.csv 
+CSV, comma-
+delimited, 
+header row 
+, varies 
+UPC, COM_CODE, 
+DESCRIP, SIZE, CASE, 
+NITEM 
+stg_UPC → 
+Dim_Product 
+demo.csv 
+CSV, comma-
+delimited, 
+header row 
+, ~93 
+STORE, ZONE, 
+INCOME, EDUC, 
+AGE9, AGE60 
+stg_Demo → 
+Dim_Store 
+ccount.csv 
+CSV, comma-
+delimited, 
+header row 
+, varies 
+STORE, WEEK, 
+CUSTCOUN, 
+GROCERY 
+stg_Ccount → 
+Fact_Customer_Traffic 
+5.3 Data Mappings 
+Complete data mappings prepared in Excel are included in Sections 4.7 (Source → Staging) and 4.8 
+(Staging → Data Mart). Excel workbook screenshots are embedded with the tables above. Every 
+transformation function — including Conditional Split on OK = 1, Derived Column for EXP(INCOME), 
+CASE-based income_band derivation, TRIM/REPLACE for DESCRIP cleansing, dollar_sales formula 
+(PRICE × MOVE / QTY), and Lookup Transform for surrogate key assignment — is explicitly documented. 
+5.4 Comprehensive Data Extraction Rules 
+Rule E1: SSIS Flat File Connection Managers 
+Each CSV requires a dedicated Flat File Connection Manager in SSIS configured as follows: 
+Property wlnd.csv upclnd.csv demo.csv ccount.csv 
+Format Delimited Delimited Delimited Delimited 
+Column delimiter Comma {,} Comma {,} Comma {,} Comma {,} 
+Row delimiter {CR}{LF} {CR}{LF} {CR}{LF} {CR}{LF} 
+Text qualifier " " " " 
+Header row Yes (skip 1) Yes (skip 1) Yes (skip 1) Yes (skip 1) 
+Code page 1252 (ANSI) 1252 (ANSI) 1252 (ANSI) 1252 (ANSI) 
+>>> INSERT: Screenshot of SSIS Flat File Connection Manager for wlnd.csv showing these settings 
+<<< 
+Rule E2: Column Data Type Mappings in SSIS 
+wlnd.csv columns in Flat File Connection Manager: 
+Source Column SSIS Input Type Output SSIS Type SQL Server Target Type 
+STORE DT_STR → DT_I4 (Data Conversion) INT 
+UPC DT_STR → DT_I8 (Data Conversion) BIGINT 
+WEEK DT_STR → DT_I4 INT 
+MOVE DT_STR → DT_I4 INT 
+QTY DT_STR → DT_I4 INT 
+PRICE DT_STR → DT_NUMERIC(10,2) DECIMAL(10,2) 
+SALE DT_STR DT_STR(10) VARCHAR(10) 
+PROFIT DT_STR → DT_NUMERIC(10,2) DECIMAL(10,2) 
+OK DT_STR → DT_I4 INT 
+Note: SSIS reads all flat file columns as DT_STR by default. A Data Conversion transformation converts 
+each to the target type before loading into staging. 
+Rule E3: Row Rejection Criteria 
+File Rejection Condition SSIS Component Action 
+wlnd.csv OK = 0 Conditional Split Redirect to rejected output 
+wlnd.csv MOVE ≤ 0 Conditional Split Redirect to rejected output 
+wlnd.csv PRICE ≤ 0 Conditional Split Redirect to rejected output 
+wlnd.csv STORE/UPC/WEEK is NULL Conditional Split Redirect to rejected output 
+demo.csv STORE is NULL or ≤ 0 Conditional Split Redirect to rejected output 
+ccount.csv STORE is NULL or ≤ 0 Conditional Split Redirect to rejected output 
+ccount.csv WEEK is NULL or ≤ 0 Conditional Split Redirect to rejected output 
+All rejected rows are routed to a Row Count transformation to record the number of rejections for audit 
+purposes. 
+5.5 Data Transformation and Cleansing Rules 
+Rule T1: OK Flag Filtering 
+• SSIS Component: Conditional Split (in Load stg_Movement Data Flow) 
+• Condition for valid output: OK_FLAG == 1 && MOVE > 0 && PRICE > 0 
+• Effect: Rows with corrupt data (OK = 0), zero/negative movement, or zero/negative price are 
+excluded before reaching the staging table. 
+Rule T2: SALE Code Standardization 
+• SSIS Component: Derived Column (in Load stg_Movement Data Flow) 
+• Expression: ISNULL(SALE) || TRIM(SALE) == "" ? "NONE" : UPPER(TRIM(SALE)) 
+• Effect: Blank/null SALE values become "NONE" (valid business state = no promotion). All codes 
+uppercased and whitespace-trimmed. Valid output values: B, C, S, NONE. 
+Rule T3: QTY Null/Zero Handling 
+• SSIS Component: Derived Column (in Load stg_Movement Data Flow) 
+• Expression: ISNULL(QTY) || QTY <= 0 ? 1 : QTY 
+• Rationale: QTY is the divisor in dollar_sales = (PRICE × MOVE) / QTY. Null/zero QTY would 
+cause division-by-zero. Default 1 means single-unit pricing (no bundle). 
+Rule T4: PROFIT Null Handling 
+• SSIS Component: Derived Column 
+• Expression: ISNULL(PROFIT) ? 0.00 : PROFIT 
+• Effect: NULL margin values default to 0.00 cents per dollar. 
+Rule T5: DESCRIP Special Character Cleansing 
+• SSIS Component: Derived Column (in Load stg_UPC Data Flow) 
+• Expression: 
+TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(DESCRIP,"#",""),"~",""),"<",""),"
+$",""),"*","")) 
+• Rationale: DFF manual documents special characters: # = combo-store sale, ~ = discontinued, < = 
+trial size, $ and * = no meaning. Removed for clean reporting names. 
+• Null handling: ISNULL(result) || result == "" ? "Unknown" : result 
+Rule T6: INCOME Log-to-Dollar Conversion 
+• SSIS Component: OLE DB Source SQL query (in Load Dim_Store Data Flow) 
+• SQL Expression: EXP(LOG_INCOME) AS MEDIAN_INCOME_DOLLARS 
+• Rationale: DEMO.csv INCOME field stores ln(median household income). EXP() recovers the 
+dollar value. Verification: INCOME = 10.9 → EXP(10.9) ≈ $54,176. 
+• This is a special ETL technique — see Section 6.11. 
+Rule T7: Income Band Derivation 
+• SSIS Component: Derived Column (in Load Dim_Store Data Flow) 
+• Expression: MEDIAN_INCOME_DOLLARS >= 60000 ? "High" : 
+(MEDIAN_INCOME_DOLLARS >= 35000 ? "Medium" : "Low") 
+• Effect: Converts raw dollar income into analyst-friendly categories for GROUP BY operations 
+without requiring end-users to define income thresholds. 
+Rule T8: Dollar Sales Computation 
+• SSIS Component: Derived Column (in Load Fact_Weekly_Sales Data Flow) 
+• Expression: (DT_DECIMAL,2)((PRICE * (DT_DECIMAL,2)MOVE) / (DT_DECIMAL,2)QTY) 
+• Rationale: Standard DFF revenue formula. QTY = pricing bundle quantity (e.g., 2-for-$5 deal → 
+QTY = 2, PRICE = $5, dollar_sales = $5 × units / 2). 
+• This is a special ETL technique — see Section 6.11. 
+Rule T9: Dim_Date Calendar Derivation 
+• SSIS Component: Execute SQL Task 
+• Logic: Collect DISTINCT week IDs from stg_Movement UNION stg_Ccount. For each: 
+calendar_date = DATEADD(WEEK, WEEK_ID − 1, '1989-09-14'). Derive month, quarter, year, 
+season (3–5=Spring, 6–8=Summer, 9–11=Fall, 12/1/2=Winter), and holiday_flag 
+(Thanksgiving/Christmas weeks). 
+Rule T10: Surrogate Key Lookup with Unknown Member Fallback 
+• SSIS Component: Lookup Transformation (4 instances in Fact_Weekly_Sales, 2 in 
+Fact_Customer_Traffic) 
+• Configuration: "Redirect rows to no match output" — unmatched rows are assigned SK = −1 via 
+Derived Column, then Union All merges matched and unmatched rows. 
+• This is a special ETL technique — see Section 6.11. 
+Rule T11: Customer Count Weekly Aggregation 
+• SSIS Component: OLE DB Source with GROUP BY 
+• SQL: SELECT STORE_ID, WEEK_ID, SUM(CUSTOMER_COUNT) AS CUSTOMER_COUNT 
+FROM stg_Ccount GROUP BY STORE_ID, WEEK_ID 
+• Rationale: CCOUNT.csv may contain daily rows. Fact_Customer_Traffic grain is Store × Week, so 
+daily values must be aggregated to weekly. 
+5.6 Plan for Aggregate Tables 
+Three aggregate tables (implemented as Materialized Indexed Views in SQL Server) are planned to 
+accelerate frequently-run dashboard queries: 
+Aggregate 1: AGG_Monthly_Store_Revenue (supports BQ1 monthly dashboards) 
+Pre-computes SUM(dollar_sales) by store_sk, calendar_year, calendar_month. Eliminates full fact table 
+scan for monthly performance reports. 
+CREATE VIEW dbo.AGG_Monthly_Store_Revenue WITH SCHEMABINDING AS 
+SELECT  
+    f.store_sk, 
+    d.calendar_year, 
+    d.calendar_month, 
+    SUM(f.dollar_sales) AS total_revenue, 
+    SUM(f.units_sold) AS total_units, 
+    COUNT_BIG(*) AS row_count 
+FROM dbo.Fact_Weekly_Sales f 
+INNER JOIN dbo.Dim_Date d ON f.date_sk = d.date_sk 
+GROUP BY f.store_sk, d.calendar_year, d.calendar_month; 
+GO 
+CREATE UNIQUE CLUSTERED INDEX IX_AGG_Monthly  
+ON dbo.AGG_Monthly_Store_Revenue(store_sk, calendar_year, calendar_month); 
+  
+Aggregate 2: AGG_Weekly_Store_Sales (supports BQ5 drill-across) 
+Pre-aggregates Fact_Weekly_Sales to Store × Week grain, eliminating product dimension. Critical for BQ5, 
+which requires joining sales to traffic at matching grain. 
+CREATE VIEW dbo.AGG_Weekly_Store_Sales WITH SCHEMABINDING AS 
+SELECT  
+    f.store_sk, 
+    f.date_sk, 
+    SUM(f.dollar_sales) AS total_revenue, 
+    SUM(f.units_sold) AS total_units, 
+    COUNT_BIG(*) AS row_count 
+FROM dbo.Fact_Weekly_Sales f 
+GROUP BY f.store_sk, f.date_sk; 
+GO 
+CREATE UNIQUE CLUSTERED INDEX IX_AGG_Weekly  
+ON dbo.AGG_Weekly_Store_Sales(store_sk, date_sk); 
+  
+Aggregate 3: AGG_Promotion_Summary (supports BQ3 promotion analysis) 
+CREATE VIEW dbo.AGG_Promo_Performance WITH SCHEMABINDING AS 
+SELECT  
+    f.promotion_sk, 
+    SUM(f.dollar_sales) AS total_revenue, 
+    SUM(f.units_sold) AS total_units, 
+    COUNT_BIG(*) AS row_count 
+FROM dbo.Fact_Weekly_Sales f 
+GROUP BY f.promotion_sk; 
+GO 
+CREATE UNIQUE CLUSTERED INDEX IX_AGG_Promo  
+ON dbo.AGG_Promo_Performance(promotion_sk); 
+  
+5.7 Organization of Data Staging Area 
+The staging database Ujjwal_Group3_Staging_Area is a transient workspace between source files and the 
+data warehouse. Its organization follows the standard ETL pattern: Extract into staging → Transform in 
+staging → Load into warehouse → Drop staging tables. 
+Staging Area Diagram: 
+┌─────────────────────────────────────────────────────────┐ 
+│              Ujjwal_Group3_Staging_Area                  │ 
+│                                                         │ 
+│  ┌─────────────────┐   ┌─────────────────┐              │ 
+│  │  stg_Movement   │   │    stg_UPC      │              │ 
+│  │  (from wlnd.csv)│   │ (from upclnd)   │              │ 
+│  │  ~99K valid rows│   │ product master  │              │ 
+│  └────────┬────────┘   └────────┬────────┘              │ 
+│           │                     │                       │ 
+│  ┌────────┴────────┐   ┌───────┴─────────┐              │ 
+│  │  stg_Demo       │   │  stg_Ccount     │              │ 
+│  │  (from demo.csv)│   │ (from ccount)   │              │ 
+│  │  ~93 store rows │   │ traffic data    │              │ 
+│  └─────────────────┘   └─────────────────┘              │ 
+│                                                         │ 
+│  Lifecycle: CREATE → LOAD → TRANSFORM → USE → DROP      │ 
+└─────────────────────────────────────────────────────────┘ 
+  
+Staging Principles: 
+1. All staging tables are TRUNCATED before each ETL run (idempotent loading). 
+2. Source-level cleansing (OK filtering, null handling, type conversion) occurs during source → 
+staging. 
+3. Business-level transformations (EXP(INCOME), income_band, dollar_sales, surrogate key lookups) 
+occur during staging → data mart. 
+4. After all DW tables are loaded and validated, all staging tables are DROPPED. 
+5.8 Procedures for All Data Extractions and Loadings 
+Complete ETL Execution Sequence (8 Phases, 20 Steps) 
+PHASE 1: DATABASE SETUP 
+  1.1  CREATE DATABASE [Ujjwal_Group3_Staging_Area] 
+  1.2  CREATE DATABASE [Ujjwal_Group3_DW_Area] 
+  1.3  CREATE all 4 staging tables in staging DB 
+  1.4  CREATE all 6 DW tables (4 dimensions + 2 facts) in DW DB 
+  1.5  INSERT Unknown Members into all 4 dimensions (SK = −1) 
+ 
+PHASE 2: SSIS CONNECTION SETUP 
+  2.1  Create Flat File Connection Manager for each CSV (4 total) 
+  2.2  Create OLE DB Connection Manager for Ujjwal_Group3_Staging_Area 
+  2.3  Create OLE DB Connection Manager for Ujjwal_Group3_DW_Area 
+ 
+PHASE 3: EXTRACT & STAGE (Package: Load_Staging.dtsx) 
+  3.1  Data Flow Task: wlnd.csv → stg_Movement 
+       Components: Flat File Source → Data Conversion → Derived Column  
+       (QTY default, SALE default, PROFIT default) → Conditional Split  
+       (OK=1 && MOVE>0 && PRICE>0) → OLE DB Destination 
+  3.2  Data Flow Task: upclnd.csv → stg_UPC 
+       Components: Flat File Source → Data Conversion → Derived Column  
+       (DESCRIP cleaning) → OLE DB Destination 
+  3.3  Data Flow Task: demo.csv → stg_Demo 
+       Components: Flat File Source → Data Conversion → Conditional Split  
+       (STORE>0) → OLE DB Destination 
+  3.4  Data Flow Task: ccount.csv → stg_Ccount 
+       Components: Flat File Source → Data Conversion → Conditional Split  
+       (STORE>0 && WEEK>0) → Derived Column (CUSTCOUN default) →  
+       OLE DB Destination 
+ 
+PHASE 4: LOAD DIMENSIONS (Package: Load_Dimensions.dtsx) 
+  4.1  Execute SQL Task: INSERT 4 rows into Dim_Promotion 
+  4.2  Data Flow Task: stg_UPC → Dim_Product 
+       Components: OLE DB Source (SELECT DISTINCT) → OLE DB Destination 
+  4.3  Data Flow Task: stg_Demo → Dim_Store 
+       Components: OLE DB Source (with EXP(LOG_INCOME)) → Derived Column  
+       (income_band) → OLE DB Destination 
+  4.4  Execute SQL Task: Populate Dim_Date 
+       (UNION of WEEK_IDs from stg_Movement + stg_Ccount, with calendar derivation) 
+ 
+PHASE 5: LOAD FACTS (Package: Load_Facts.dtsx) 
+  5.1  Data Flow Task: stg_Movement → Fact_Weekly_Sales 
+       Components: OLE DB Source → Lookup (Store SK) → Lookup (Date SK) →  
+       Lookup (Product SK) → Lookup (Promotion SK) → Derived Column  
+       (dollar_sales) → OLE DB Destination 
+  5.2  Data Flow Task: stg_Ccount → Fact_Customer_Traffic 
+       Components: OLE DB Source (GROUP BY for weekly aggregation) →  
+       Lookup (Store SK) → Lookup (Date SK) → OLE DB Destination 
+  5.3  Execute SQL Task: UPDATE NULL SKs to −1 (Unknown Member fallback) 
+ 
+PHASE 6: VALIDATION 
+  6.1  Grain integrity checks (no duplicates at declared grain) 
+  6.2  Referential integrity checks (no orphaned FKs) 
+  6.3  Roll-up integrity check (grand totals match) 
+  6.4  Double-counting prevention check (BQ5 traffic totals) 
+  6.5  Unknown Member audit (count rows assigned to SK = −1) 
+ 
+PHASE 7: BQ TESTING 
+  7.1  Run BQ1 query and verify results 
+  7.2  Run BQ2 query and verify results 
+  7.3  Run BQ3 query and verify results 
+  7.4  Run BQ4 query and verify results 
+  7.5  Run BQ5 drill-across query and verify results 
+ 
+PHASE 8: CLEANUP 
+  8.1  DROP TABLE stg_Movement 
+  8.2  DROP TABLE stg_UPC 
+  8.3  DROP TABLE stg_Demo 
+  8.4  DROP TABLE stg_Ccount 
+  8.5  Document dropped tables 
+  
+5.9 ETL for Dimension Tables 
+5.9.1 Dim_Promotion (Execute SQL Task) 
+This is the simplest dimension: 4 static rows plus 1 Unknown Member. Loaded via Execute SQL Task in 
+SSIS. 
+SSIS Configuration: 
+• Task type: Execute SQL Task 
+• Connection: Ujjwal_Group3_DW_Area (OLE DB) 
+• SQL Statement: 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('B', 'Bonus Buy'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('C', 'Coupon'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('S', 'Simple Reduction'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('NONE', 'No Promotion'); 
+  
+Expected result: 5 rows total (4 business rows + 1 Unknown at SK = −1). 
+5.9.2 Dim_Product (Data Flow Task) 
+SSIS Data Flow components: 
+1. OLE DB Source (Connection: Ujjwal_Group3_Staging_Area) 
+SELECT DISTINCT UPC_CODE, ITEM_DESCRIPTION, COMMODITY_CODE 
+FROM stg_UPC 
+WHERE UPC_CODE IS NOT NULL AND UPC_CODE > 0; 
+  
+2. OLE DB Destination (Connection: Ujjwal_Group3_DW_Area, Table: Dim_Product)  
+a. UPC_CODE → upc_id 
+b. ITEM_DESCRIPTION → item_description 
+c. COMMODITY_CODE → commodity_code 
+d. product_sk auto-generated by IDENTITY 
+5.9.3 Dim_Store (Data Flow Task) 
+SSIS Data Flow components: 
+1. OLE DB Source (Connection: Ujjwal_Group3_Staging_Area) 
+SELECT DISTINCT 
+    STORE_ID, 
+    STORE_ZONE, 
+    EXP(LOG_INCOME) AS MEDIAN_INCOME_DOLLARS, 
+    EDUCATION_PCT 
+FROM stg_Demo 
+WHERE STORE_ID IS NOT NULL AND STORE_ID > 0; 
+  
+2. Derived Column Transformation — Adds income_band column: 
+a. Column name: income_band 
+b. Expression: MEDIAN_INCOME_DOLLARS >= 60000 ? "High" : 
+(MEDIAN_INCOME_DOLLARS >= 35000 ? "Medium" : "Low") 
+c. Data type: DT_STR(10) 
+3. OLE DB Destination (Table: Dim_Store) 
+a. STORE_ID → store_id 
+b. STORE_ZONE → store_zone 
+c. MEDIAN_INCOME_DOLLARS → median_income 
+d. EDUCATION_PCT → education_pct 
+e. income_band → income_band 
+5.9.4 Dim_Date (Execute SQL Task) 
+SSIS Configuration: 
+• Task type: Execute SQL Task 
+• Connection: Ujjwal_Group3_DW_Area 
+DECLARE @epoch DATE = '1989-09-14'; 
+ 
+INSERT INTO Dim_Date (week_id, calendar_date, calendar_month, calendar_quarter,  
+                      calendar_year, season, holiday_flag) 
+SELECT DISTINCT 
+    w.WEEK_ID, 
+    DATEADD(WEEK, w.WEEK_ID - 1, @epoch), 
+    MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)), 
+    DATEPART(QUARTER, DATEADD(WEEK, w.WEEK_ID - 1, @epoch)), 
+    YEAR(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)), 
+    CASE  
+        WHEN MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) IN (3,4,5) THEN 'Spring' 
+        WHEN MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) IN (6,7,8) THEN 'Summer' 
+        WHEN MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) IN (9,10,11) THEN 'Fall' 
+        ELSE 'Winter' 
+    END, 
+    CASE 
+        WHEN MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) = 11  
+             AND DAY(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) BETWEEN 22 AND 28 THEN 1 
+        WHEN MONTH(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) = 12  
+             AND DAY(DATEADD(WEEK, w.WEEK_ID - 1, @epoch)) BETWEEN 20 AND 31 THEN 1 
+        ELSE 0 
+    END 
+FROM ( 
+    SELECT WEEK_ID FROM [Ujjwal_Group3_Staging_Area].dbo.stg_Movement 
+    UNION 
+    SELECT WEEK_ID FROM [Ujjwal_Group3_Staging_Area].dbo.stg_Ccount 
+) w 
+WHERE w.WEEK_ID IS NOT NULL AND w.WEEK_ID > 0 
+ORDER BY w.WEEK_ID; 
+  
+5.10 ETL for Fact Tables 
+5.10.1 Fact_Weekly_Sales (Data Flow Task) 
+This is the most complex Data Flow — 4 Lookup Transformations + 1 Derived Column. 
+SSIS Data Flow components (in execution order): 
+1. OLE DB Source (Connection: Ujjwal_Group3_Staging_Area) 
+SELECT STORE_ID, UPC_ID, WEEK_ID, MOVE, QTY, PRICE, SALE_CODE, PROFIT 
+FROM stg_Movement; 
+  
+2. Lookup Transform #1: Store SK 
+a. Connection: Ujjwal_Group3_DW_Area 
+b. Lookup query: SELECT store_sk, store_id FROM Dim_Store 
+c. Join column: STORE_ID = store_id 
+d. Output column: store_sk 
+e. No match behavior: Ignore failure (outputs NULL) 
+3. Lookup Transform #2: Date SK 
+a. Lookup query: SELECT date_sk, week_id FROM Dim_Date 
+b. Join column: WEEK_ID = week_id 
+c. Output column: date_sk 
+d. No match behavior: Ignore failure 
+4. Lookup Transform #3: Product SK 
+a. Lookup query: SELECT product_sk, upc_id FROM Dim_Product 
+b. Join column: UPC_ID = upc_id 
+c. Output column: product_sk 
+d. No match behavior: Ignore failure 
+5. Lookup Transform #4: Promotion SK 
+a. Lookup query: SELECT promotion_sk, sale_code FROM Dim_Promotion 
+b. Join column: SALE_CODE = sale_code 
+c. Output column: promotion_sk 
+d. No match behavior: Ignore failure 
+6. Derived Column: dollar_sales 
+a. Expression: (DT_DECIMAL,2)((PRICE * MOVE) / QTY) 
+7. OLE DB Destination (Table: Fact_Weekly_Sales) 
+Pipeline Column → Destination Column 
+store_sk → store_sk 
+date_sk → date_sk 
+product_sk → product_sk 
+promotion_sk → promotion_sk 
+MOVE → units_sold 
+PRICE → retail_price 
+dollar_sales → dollar_sales 
+PROFIT → profit_margin_pct 
+5.10.2 Fact_Customer_Traffic (Data Flow Task) 
+1. OLE DB Source (with GROUP BY to aggregate daily → weekly): 
+SELECT STORE_ID, WEEK_ID, SUM(CUSTOMER_COUNT) AS CUSTOMER_COUNT 
+FROM [Ujjwal_Group3_Staging_Area].dbo.stg_Ccount 
+WHERE STORE_ID > 0 AND WEEK_ID > 0 
+GROUP BY STORE_ID, WEEK_ID; 
+  
+2. Lookup Transform #1: Store SK (same pattern as above) 
+3. Lookup Transform #2: Date SK (same pattern) 
+4. OLE DB Destination (Table: Fact_Customer_Traffic) 
+5.10.3 Post-Load NULL SK Cleanup (Execute SQL Task) 
+After both fact Data Flows complete, an Execute SQL Task replaces any NULL surrogate keys (from failed 
+lookups) with the Unknown Member SK = −1: 
+UPDATE Fact_Weekly_Sales SET store_sk = -1 WHERE store_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET date_sk = -1 WHERE date_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET product_sk = -1 WHERE product_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET promotion_sk = -1 WHERE promotion_sk IS NULL; 
+UPDATE Fact_Customer_Traffic SET store_sk = -1 WHERE store_sk IS NULL; 
+UPDATE Fact_Customer_Traffic SET date_sk = -1 WHERE date_sk IS NULL; 
+  
+ 
+6. Implementation of the ETL Plan 
+This section documents the actual SSIS implementation with all SQL statements, SSIS package screenshots, 
+and before-and-after evidence. 
+6.1 Database Creation and SSIS Connection Setup 
+Database Creation SQL 
+-- ============================================= 
+-- STEP 1: Create Staging Database 
+-- ============================================= 
+CREATE DATABASE [Ujjwal_Group3_Staging_Area]; 
+GO 
+ 
+-- ============================================= 
+-- STEP 2: Create Data Warehouse Database 
+-- ============================================= 
+CREATE DATABASE [Ujjwal_Group3_DW_Area]; 
+GO 
+  
+>>> INSERT: Screenshot of SSMS Object Explorer showing both databases <<< 
+SSIS Connection Managers 
+Three connection managers were created in the SSIS project: 
+Connection Manager Name Type Server Database 
+FlatFile_wlnd Flat File N/A (file path) wlnd.csv 
+FlatFile_upclnd Flat File N/A upclnd.csv 
+FlatFile_demo Flat File N/A demo.csv 
+FlatFile_ccount Flat File N/A ccount.csv 
+OLEDB_Staging OLE DB localhost Ujjwal_Group3_Staging_Area 
+OLEDB_DW OLE DB localhost Ujjwal_Group3_DW_Area 
+>>> INSERT: Screenshot of SSIS Connection Managers pane showing all 6 connections <<< 
+6.2 All SQL Statements Used 
+Below is every SQL statement executed during the ETL process — in Execute SQL Tasks within SSIS or 
+directly in SSMS for setup. 
+SQL Statement #1: Create Staging Tables 
+USE [Ujjwal_Group3_Staging_Area]; 
+GO 
+ 
+CREATE TABLE stg_Movement ( 
+    STORE_ID    INT, 
+    UPC_ID      BIGINT, 
+    WEEK_ID     INT, 
+    MOVE        INT, 
+    QTY         INT, 
+    PRICE       DECIMAL(10,2), 
+    SALE_CODE   VARCHAR(10), 
+    PROFIT      DECIMAL(10,2), 
+    OK_FLAG     INT 
+); 
+ 
+CREATE TABLE stg_UPC ( 
+    UPC_CODE        BIGINT, 
+    COMMODITY_CODE  INT, 
+    NITEM           INT, 
+    ITEM_DESCRIPTION VARCHAR(100), 
+    PRODUCT_SIZE    VARCHAR(20), 
+    CASE_PACK       INT 
+); 
+ 
+CREATE TABLE stg_Demo ( 
+    STORE_ID        INT, 
+    STORE_ZONE      INT, 
+    LOG_INCOME      DECIMAL(10,4), 
+    EDUCATION_PCT   DECIMAL(10,4), 
+    AGE9            DECIMAL(10,4), 
+    AGE60           DECIMAL(10,4), 
+    ETHNIC          DECIMAL(10,4), 
+    CITY            VARCHAR(50), 
+    NAME            VARCHAR(100) 
+); 
+ 
+CREATE TABLE stg_Ccount ( 
+    DATE_FIELD      VARCHAR(10), 
+    WEEK_ID         INT, 
+    STORE_ID        INT, 
+    CUSTOMER_COUNT  INT, 
+    GROCERY         DECIMAL(12,2), 
+    GROCCOUP        DECIMAL(12,2) 
+); 
+GO 
+  
+SQL Statement #2: Create Dimension Tables 
+USE [Ujjwal_Group3_DW_Area]; 
+GO 
+ 
+CREATE TABLE Dim_Store ( 
+    store_sk        INT IDENTITY(1,1) PRIMARY KEY, 
+    store_id        INT NOT NULL, 
+    store_zone      INT, 
+    median_income   DECIMAL(12,2), 
+    education_pct   DECIMAL(5,4), 
+    income_band     VARCHAR(10) 
+); 
+ 
+CREATE TABLE Dim_Date ( 
+    date_sk         INT IDENTITY(1,1) PRIMARY KEY, 
+    week_id         INT NOT NULL, 
+    calendar_date   DATE, 
+    calendar_month  INT, 
+    calendar_quarter INT, 
+    calendar_year   INT, 
+    season          VARCHAR(10), 
+    holiday_flag    BIT DEFAULT 0 
+); 
+ 
+CREATE TABLE Dim_Product ( 
+    product_sk      INT IDENTITY(1,1) PRIMARY KEY, 
+    upc_id          BIGINT NOT NULL, 
+    item_description VARCHAR(100), 
+    commodity_code  INT 
+); 
+ 
+CREATE TABLE Dim_Promotion ( 
+    promotion_sk    INT IDENTITY(1,1) PRIMARY KEY, 
+    sale_code       VARCHAR(10) NOT NULL, 
+    promotion_type  VARCHAR(30) 
+); 
+GO 
+  
+SQL Statement #3: Create Fact Tables 
+USE [Ujjwal_Group3_DW_Area]; 
+GO 
+ 
+CREATE TABLE Fact_Weekly_Sales ( 
+    sales_fact_id    INT IDENTITY(1,1) PRIMARY KEY, 
+    store_sk         INT NOT NULL, 
+    date_sk          INT NOT NULL, 
+    product_sk       INT NOT NULL, 
+    promotion_sk     INT NOT NULL, 
+    units_sold       INT, 
+    retail_price     DECIMAL(10,2), 
+    dollar_sales     DECIMAL(12,2), 
+    profit_margin_pct DECIMAL(5,2), 
+    CONSTRAINT FK_Sales_Store FOREIGN KEY (store_sk) REFERENCES Dim_Store(store_sk), 
+    CONSTRAINT FK_Sales_Date FOREIGN KEY (date_sk) REFERENCES Dim_Date(date_sk), 
+    CONSTRAINT FK_Sales_Product FOREIGN KEY (product_sk) REFERENCES 
+Dim_Product(product_sk), 
+    CONSTRAINT FK_Sales_Promo FOREIGN KEY (promotion_sk) REFERENCES 
+Dim_Promotion(promotion_sk) 
+); 
+ 
+CREATE TABLE Fact_Customer_Traffic ( 
+    traffic_fact_id  INT IDENTITY(1,1) PRIMARY KEY, 
+    store_sk         INT NOT NULL, 
+    date_sk          INT NOT NULL, 
+    customer_count   INT, 
+    CONSTRAINT FK_Traffic_Store FOREIGN KEY (store_sk) REFERENCES Dim_Store(store_sk), 
+    CONSTRAINT FK_Traffic_Date FOREIGN KEY (date_sk) REFERENCES Dim_Date(date_sk) 
+); 
+GO 
+  
+SQL Statement #4: Insert Unknown Members 
+USE [Ujjwal_Group3_DW_Area]; 
+GO 
+ 
+SET IDENTITY_INSERT Dim_Store ON; 
+INSERT INTO Dim_Store (store_sk, store_id, store_zone, median_income, education_pct, income_band) 
+VALUES (-1, -1, -1, 0.00, 0.0000, 'Unknown'); 
+SET IDENTITY_INSERT Dim_Store OFF; 
+ 
+SET IDENTITY_INSERT Dim_Date ON; 
+INSERT INTO Dim_Date (date_sk, week_id, calendar_date, calendar_month, calendar_quarter,  
+                      calendar_year, season, holiday_flag) 
+VALUES (-1, -1, '1900-01-01', 0, 0, 0, 'Unknown', 0); 
+SET IDENTITY_INSERT Dim_Date OFF; 
+ 
+SET IDENTITY_INSERT Dim_Product ON; 
+INSERT INTO Dim_Product (product_sk, upc_id, item_description, commodity_code) 
+VALUES (-1, -1, 'Unknown Product', -1); 
+SET IDENTITY_INSERT Dim_Product OFF; 
+ 
+SET IDENTITY_INSERT Dim_Promotion ON; 
+INSERT INTO Dim_Promotion (promotion_sk, sale_code, promotion_type) 
+VALUES (-1, 'UNKNOWN', 'Unknown Promotion'); 
+SET IDENTITY_INSERT Dim_Promotion OFF; 
+GO 
+  
+SQL Statement #5: Load Dim_Promotion 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('B', 'Bonus Buy'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('C', 'Coupon'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('S', 'Simple Reduction'); 
+INSERT INTO Dim_Promotion (sale_code, promotion_type) VALUES ('NONE', 'No Promotion'); 
+  
+SQL Statement #6: Load Dim_Date 
+(Full SQL shown in Section 5.9.4 above — the Execute SQL Task uses that exact script.) 
+SQL Statement #7: NULL SK Cleanup After Fact Loading 
+UPDATE Fact_Weekly_Sales SET store_sk = -1 WHERE store_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET date_sk = -1 WHERE date_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET product_sk = -1 WHERE product_sk IS NULL; 
+UPDATE Fact_Weekly_Sales SET promotion_sk = -1 WHERE promotion_sk IS NULL; 
+UPDATE Fact_Customer_Traffic SET store_sk = -1 WHERE store_sk IS NULL; 
+UPDATE Fact_Customer_Traffic SET date_sk = -1 WHERE date_sk IS NULL; 
+  
+SQL Statement #8: Create Aggregate Views 
+(Full SQL shown in Section 5.6 above.) 
+SQL Statement #9: Drop Staging Tables 
+USE [Ujjwal_Group3_Staging_Area]; 
+DROP TABLE IF EXISTS stg_Movement; 
+DROP TABLE IF EXISTS stg_UPC; 
+DROP TABLE IF EXISTS stg_Demo; 
+DROP TABLE IF EXISTS stg_Ccount; 
+  
+6.3 SSIS Package 1: Load_Staging — Design and Execution 
+Control Flow 
+The Load_Staging.dtsx package contains four Data Flow Tasks executed sequentially: 
+┌──────────────────────────────────────┐ 
+│     SSIS Package: Load_Staging       │ 
+│                                      │ 
+│  ┌──────────────────────────────┐    │ 
+│  │ DFT: Load stg_Movement      │    │ 
+│  │ (wlnd.csv → stg_Movement)   │    │ 
+│  └──────────────┬───────────────┘    │ 
+│                 ↓                    │ 
+│  ┌──────────────────────────────┐    │ 
+│  │ DFT: Load stg_UPC           │    │ 
+│  │ (upclnd.csv → stg_UPC)      │    │ 
+│  └──────────────┬───────────────┘    │ 
+│                 ↓                    │ 
+│  ┌──────────────────────────────┐    │ 
+│  │ DFT: Load stg_Demo          │    │ 
+│  │ (demo.csv → stg_Demo)       │    │ 
+│  └──────────────┬───────────────┘    │ 
+│                 ↓                    │ 
+│  ┌──────────────────────────────┐    │ 
+│  │ DFT: Load stg_Ccount        │    │ 
+│  │ (ccount.csv → stg_Ccount)   │    │ 
+│  └──────────────────────────────┘    │ 
+└──────────────────────────────────────┘ 
+  
+>>> INSERT: Screenshot of SSIS Control Flow tab showing all 4 Data Flow Tasks with green 
+checkmarks <<< 
+Data Flow: Load stg_Movement (Detail) 
+┌───────────────────────┐ 
+│  Flat File Source      │  ← FlatFile_wlnd connection 
+│  (wlnd.csv)           │ 
+└───────────┬───────────┘ 
+            ↓ 
+┌───────────────────────┐ 
+│  Data Conversion      │  ← Convert DT_STR to DT_I4/DT_I8/DT_NUMERIC 
+│                       │     STORE → DT_I4, UPC → DT_I8, etc. 
+└───────────┬───────────┘ 
+            ↓ 
+┌───────────────────────┐ 
+│  Derived Column       │  ← QTY_CLEAN: ISNULL(QTY)||QTY<=0 ? 1 : QTY 
+│  "Handle Nulls"       │     SALE_CLEAN: ISNULL(SALE)||TRIM(SALE)=="" ? "NONE" : 
+UPPER(TRIM(SALE)) 
+│                       │     PROFIT_CLEAN: ISNULL(PROFIT) ? 0.00 : PROFIT 
+└───────────┬───────────┘ 
+            ↓ 
+┌───────────────────────────────────────┐ 
+│  Conditional Split                    │ 
+│  "Filter Valid Rows"                  │ 
+│                                       │ 
+│  Output 1 (ValidRows):               │ 
+│    OK_FLAG == 1 && MOVE > 0           │ 
+│    && PRICE > 0                       │ 
+│                                       │ 
+│  Default Output (RejectedRows):      │ 
+│    Everything else                    │ 
+└───────┬───────────────┬───────────────┘ 
+        ↓               ↓ 
+┌───────────────┐ ┌─────────────┐ 
+│ OLE DB Dest   │ │ Row Count   │  ← Counts rejected rows 
+│ stg_Movement  │ │ @Rejected   │     for audit logging 
+└───────────────┘ └─────────────┘ 
+  
+>>> INSERT: Screenshot of SSIS Data Flow tab for Load stg_Movement showing all components 
+connected <<< >>> INSERT: Screenshot of successful execution with row counts on each arrow <<< 
+Data Flow: Load stg_UPC (Detail) 
+[Flat File Source: upclnd.csv] 
+        ↓ 
+[Data Conversion: DT_STR → target types] 
+        ↓ 
+[Derived Column: "Clean DESCRIP"] 
+  Expression: TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE( 
+              DESCRIP,"#",""),"~",""),"<",""),"$",""),"*","")) 
+  Null check: ISNULL(result) || result == "" ? "Unknown" : result 
+        ↓ 
+[OLE DB Destination: stg_UPC] 
+  
+>>> INSERT: Screenshot of SSIS Data Flow for stg_UPC <<< 
+Data Flow: Load stg_Demo (Detail) 
+[Flat File Source: demo.csv] 
+        ↓ 
+[Data Conversion] 
+        ↓ 
+[Conditional Split: STORE_ID > 0 AND NOT NULL] 
+        ↓ (ValidRows) 
+[OLE DB Destination: stg_Demo] 
+  
+>>> INSERT: Screenshot of SSIS Data Flow for stg_Demo <<< 
+Data Flow: Load stg_Ccount (Detail) 
+[Flat File Source: ccount.csv] 
+        ↓ 
+[Data Conversion] 
+        ↓ 
+[Conditional Split: STORE_ID > 0 && WEEK_ID > 0] 
+        ↓ (ValidRows) 
+[Derived Column: ISNULL(CUSTCOUN) ? 0 : CUSTCOUN] 
+        ↓ 
+[OLE DB Destination: stg_Ccount] 
+  
+>>> INSERT: Screenshot of SSIS Data Flow for stg_Ccount <<< 
+Post-Staging Verification 
+USE [Ujjwal_Group3_Staging_Area]; 
+ 
+SELECT 'stg_Movement' AS [Table], COUNT(*) AS [Row Count] FROM stg_Movement 
+UNION ALL SELECT 'stg_UPC', COUNT(*) FROM stg_UPC 
+UNION ALL SELECT 'stg_Demo', COUNT(*) FROM stg_Demo 
+UNION ALL SELECT 'stg_Ccount', COUNT(*) FROM stg_Ccount; 
+ 
+-- Sample rows 
+SELECT TOP 5 * FROM stg_Movement; 
+SELECT TOP 5 * FROM stg_UPC; 
+SELECT TOP 5 * FROM stg_Demo; 
+SELECT TOP 5 * FROM stg_Ccount; 
+  
+>>> INSERT: Screenshot of staging row counts and sample rows <<< 
+6.4 SSIS Package 2: Load_Dimensions — Design and Execution 
+Control Flow 
+┌──────────────────────────────────────────┐ 
+│     SSIS Package: Load_Dimensions        │ 
+│                                          │ 
+│  ┌──────────────────────────────────┐    │ 
+│  │ SQL Task: Load Dim_Promotion     │    │ 
+│  │ (4 INSERT statements)            │    │ 
+│  └──────────────┬───────────────────┘    │ 
+│                 ↓                        │ 
+│  ┌──────────────────────────────────┐    │ 
+│  │ DFT: Load Dim_Product            │    │ 
+│  │ (stg_UPC → Dim_Product)          │    │ 
+│  └──────────────┬───────────────────┘    │ 
+│                 ↓                        │ 
+│  ┌──────────────────────────────────┐    │ 
+│  │ DFT: Load Dim_Store              │    │ 
+│  │ (stg_Demo → Dim_Store)           │    │ 
+│  │ includes EXP() + income_band     │    │ 
+│  └──────────────┬───────────────────┘    │ 
+│                 ↓                        │ 
+│  ┌──────────────────────────────────┐    │ 
+│  │ SQL Task: Load Dim_Date          │    │ 
+│  │ (UNION weeks + calendar derive)  │    │ 
+│  └──────────────────────────────────┘    │ 
+└──────────────────────────────────────────┘ 
+  
+>>> INSERT: Screenshot of SSIS Control Flow for Load_Dimensions with green checkmarks <<< 
+Data Flow: Load Dim_Store (Detail — Most Complex Dimension) 
+┌──────────────────────────────────────────┐ 
+│  OLE DB Source                            │ 
+│  Connection: Ujjwal_Group3_Staging_Area   │ 
+│  SQL: SELECT DISTINCT STORE_ID,           │ 
+│       STORE_ZONE,                         │ 
+│       EXP(LOG_INCOME) AS MEDIAN_INCOME,   │  ← T6: Log-to-dollar conversion 
+│       EDUCATION_PCT                       │ 
+│  FROM stg_Demo                            │ 
+│  WHERE STORE_ID > 0                       │ 
+└──────────────────┬───────────────────────┘ 
+                   ↓ 
+┌──────────────────────────────────────────┐ 
+│  Derived Column: "income_band"            │ 
+│                                           │ 
+│  Expression:                              │  ← T7: Income band derivation 
+│  MEDIAN_INCOME >= 60000 ? "High" :        │ 
+│  (MEDIAN_INCOME >= 35000 ? "Medium" :     │ 
+│  "Low")                                   │ 
+└──────────────────┬───────────────────────┘ 
+                   ↓ 
+┌──────────────────────────────────────────┐ 
+│  OLE DB Destination: Dim_Store            │ 
+│  Connection: Ujjwal_Group3_DW_Area        │ 
+│  Mappings:                                │ 
+│    STORE_ID → store_id                    │ 
+│    STORE_ZONE → store_zone                │ 
+│    MEDIAN_INCOME → median_income          │ 
+│    EDUCATION_PCT → education_pct          │ 
+│    income_band → income_band              │ 
+└──────────────────────────────────────────┘ 
+  
+>>> INSERT: Screenshot of Dim_Store Data Flow with Derived Column expression visible <<< 
+Post-Dimension Verification 
+USE [Ujjwal_Group3_DW_Area]; 
+ 
+-- Row counts 
+SELECT 'Dim_Store' AS [Table], COUNT(*) AS [Rows] FROM Dim_Store WHERE store_sk != -1 
+UNION ALL SELECT 'Dim_Date', COUNT(*) FROM Dim_Date WHERE date_sk != -1 
+UNION ALL SELECT 'Dim_Product', COUNT(*) FROM Dim_Product WHERE product_sk != -1 
+UNION ALL SELECT 'Dim_Promotion', COUNT(*) FROM Dim_Promotion WHERE promotion_sk != -1; 
+ 
+-- Verify EXP(INCOME) transformation and income_band 
+SELECT store_id, store_zone, median_income, education_pct, income_band 
+FROM Dim_Store WHERE store_sk != -1 ORDER BY store_id; 
+ 
+-- Verify income_band distribution 
+SELECT income_band, COUNT(*) AS store_count 
+FROM Dim_Store WHERE store_sk != -1 
+GROUP BY income_band; 
+ 
+-- Verify Dim_Date calendar derivation 
+SELECT TOP 15 week_id, calendar_date, calendar_month, calendar_quarter, 
+       calendar_year, season, holiday_flag 
+FROM Dim_Date WHERE date_sk != -1 ORDER BY week_id; 
+ 
+-- Verify Dim_Promotion (5 rows: Unknown + B + C + S + NONE) 
+SELECT * FROM Dim_Promotion ORDER BY promotion_sk; 
+ 
+-- Verify Dim_Product 
+SELECT TOP 10 * FROM Dim_Product WHERE product_sk != -1; 
+  
+>>> INSERT: Screenshots of ALL verification query results above <<< 
+6.5 SSIS Package 3: Load_Facts — Design and Execution 
+Control Flow 
+┌──────────────────────────────────────────────┐ 
+│     SSIS Package: Load_Facts                  │ 
+│                                               │ 
+│  ┌──────────────────────────────────────┐     │ 
+│  │ DFT: Load Fact_Weekly_Sales          │     │ 
+│  │ (stg_Movement → Fact_Weekly_Sales)   │     │ 
+│  │ 4 Lookups + Derived Column           │     │ 
+│  └──────────────┬───────────────────────┘     │ 
+│                 ↓                             │ 
+│  ┌──────────────────────────────────────┐     │ 
+│  │ DFT: Load Fact_Customer_Traffic      │     │ 
+│  │ (stg_Ccount → Fact_Customer_Traffic) │     │ 
+│  │ 2 Lookups + GROUP BY aggregation     │     │ 
+│  └──────────────┬───────────────────────┘     │ 
+│                 ↓                             │ 
+│  ┌──────────────────────────────────────┐     │ 
+│  │ SQL Task: Fix NULL Surrogate Keys    │     │ 
+│  │ UPDATE ... SET sk = -1 WHERE NULL    │     │ 
+│  └──────────────────────────────────────┘     │ 
+└──────────────────────────────────────────────┘ 
+  
+>>> INSERT: Screenshot of Load_Facts Control Flow with green checkmarks <<< 
+Data Flow: Load Fact_Weekly_Sales (Detail) 
+┌────────────────────────┐ 
+│  OLE DB Source          │  ← SELECT from stg_Movement 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  Lookup: Store SK      │  ← Match STORE_ID → Dim_Store.store_id 
+│  Output: store_sk      │     No match: Ignore failure (NULL) 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  Lookup: Date SK       │  ← Match WEEK_ID → Dim_Date.week_id 
+│  Output: date_sk       │     No match: Ignore failure (NULL) 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  Lookup: Product SK    │  ← Match UPC_ID → Dim_Product.upc_id 
+│  Output: product_sk    │     No match: Ignore failure (NULL) 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  Lookup: Promotion SK  │  ← Match SALE_CODE → Dim_Promotion.sale_code 
+│  Output: promotion_sk  │     No match: Ignore failure (NULL) 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────────────┐ 
+│  Derived Column: dollar_sales  │  ← T8: (PRICE * MOVE) / QTY 
+└───────────┬────────────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  OLE DB Destination    │  ← Fact_Weekly_Sales 
+│  (Column mappings:)    │ 
+│  store_sk → store_sk   │ 
+│  date_sk → date_sk     │ 
+│  product_sk → product_sk│ 
+│  promotion_sk → promo_sk│ 
+│  MOVE → units_sold     │ 
+│  PRICE → retail_price  │ 
+│  dollar_sales → dollar_sales │ 
+│  PROFIT → profit_margin_pct  │ 
+└────────────────────────┘ 
+  
+>>> INSERT: Screenshot of Fact_Weekly_Sales Data Flow showing all Lookup + Derived Column 
+components <<< >>> INSERT: Screenshot of Lookup Transform configuration (one example showing 
+join columns) <<< >>> INSERT: Screenshot of Derived Column expression for dollar_sales <<< >>> 
+INSERT: Screenshot of execution results with row counts on each pipeline arrow <<< 
+Data Flow: Load Fact_Customer_Traffic (Detail) 
+┌─────────────────────────────────────────┐ 
+│  OLE DB Source (with GROUP BY)           │ 
+│  SELECT STORE_ID, WEEK_ID,              │ 
+│    SUM(CUSTOMER_COUNT) AS CUST_COUNT    │ 
+│  FROM stg_Ccount                        │ 
+│  WHERE STORE_ID > 0 AND WEEK_ID > 0    │ 
+│  GROUP BY STORE_ID, WEEK_ID             │ 
+└───────────────────┬─────────────────────┘ 
+                    ↓ 
+┌────────────────────────┐ 
+│  Lookup: Store SK      │ 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  Lookup: Date SK       │ 
+└───────────┬────────────┘ 
+            ↓ 
+┌────────────────────────┐ 
+│  OLE DB Destination    │  ← Fact_Customer_Traffic 
+└────────────────────────┘ 
+  
+>>> INSERT: Screenshot of Fact_Customer_Traffic Data Flow <<< 
+6.6 Data Granularity at the Independent Data Mart Level 
+Data granularity is the level of detail stored in each fact table. Correct granularity prevents double-counting 
+and ensures aggregation accuracy. 
+Fact_Weekly_Sales granularity: One row per Store × Product (UPC) × Week. This is the finest grain 
+available from the Movement source file. Each row represents the complete sales record for one specific 
+product at one specific store during one specific week. 
+Fact_Customer_Traffic granularity: One row per Store × Week. This is the only grain available from 
+CCOUNT data, which provides a single customer count per store per week with no product-level 
+breakdown. 
+Why grain isolation matters: The two grains are incompatible. Mixing Store × Product × Week data with 
+Store × Week data in a single table would cause the Store × Week measure (customer_count) to replicate 
+across every product row, producing inflated totals. Cross-fact analysis for BQ5 uses the Kimball drill-
+across pattern: pre-aggregate Fact_Weekly_Sales to Store × Week (eliminating the product dimension), then 
+join to Fact_Customer_Traffic on the conformed Dim_Store and Dim_Date keys. 
+Granularity verification queries: 
+-- Fact_Weekly_Sales: should return 0 rows (no duplicates at grain) 
+SELECT store_sk, product_sk, date_sk, COUNT(*) AS cnt 
+FROM Fact_Weekly_Sales 
+GROUP BY store_sk, product_sk, date_sk 
+HAVING COUNT(*) > 1; 
+ 
+-- Fact_Customer_Traffic: should return 0 rows (no duplicates at grain) 
+SELECT store_sk, date_sk, COUNT(*) AS cnt 
+FROM Fact_Customer_Traffic 
+GROUP BY store_sk, date_sk 
+HAVING COUNT(*) > 1; 
+  
+>>> INSERT: Screenshot showing both queries return 0 rows <<< 
+6.7 Before-and-After Table Snapshots 
+BEFORE Loading (After table creation + Unknown Members only) 
+USE [Ujjwal_Group3_DW_Area]; 
+SELECT 'Dim_Store' AS [Table], COUNT(*) AS [Rows] FROM Dim_Store 
+UNION ALL SELECT 'Dim_Date', COUNT(*) FROM Dim_Date 
+UNION ALL SELECT 'Dim_Product', COUNT(*) FROM Dim_Product 
+UNION ALL SELECT 'Dim_Promotion', COUNT(*) FROM Dim_Promotion 
+UNION ALL SELECT 'Fact_Weekly_Sales', COUNT(*) FROM Fact_Weekly_Sales 
+UNION ALL SELECT 'Fact_Customer_Traffic', COUNT(*) FROM Fact_Customer_Traffic; 
+  
+Expected: Dim_Store = 1, Dim_Date = 1, Dim_Product = 1, Dim_Promotion = 1, Fact_Weekly_Sales = 0, 
+Fact_Customer_Traffic = 0. 
+>>> INSERT: Screenshot of BEFORE row counts <<< 
+AFTER Loading (All ETL complete) 
+USE [Ujjwal_Group3_DW_Area]; 
+SELECT 'Dim_Store' AS [Table], COUNT(*) AS [Rows] FROM Dim_Store 
+UNION ALL SELECT 'Dim_Date', COUNT(*) FROM Dim_Date 
+UNION ALL SELECT 'Dim_Product', COUNT(*) FROM Dim_Product 
+UNION ALL SELECT 'Dim_Promotion', COUNT(*) FROM Dim_Promotion 
+UNION ALL SELECT 'Fact_Weekly_Sales', COUNT(*) FROM Fact_Weekly_Sales 
+UNION ALL SELECT 'Fact_Customer_Traffic', COUNT(*) FROM Fact_Customer_Traffic; 
+  
+Expected: Dim_Store ≈ 94, Dim_Date ≈ 400+, Dim_Product = varies, Dim_Promotion = 5, 
+Fact_Weekly_Sales ≈ 99,000+, Fact_Customer_Traffic = varies. 
+>>> INSERT: Screenshot of AFTER row counts <<< 
+Sample Data from Each Table (AFTER) 
+SELECT TOP 10 * FROM Dim_Store WHERE store_sk != -1 ORDER BY store_id; 
+SELECT TOP 10 * FROM Dim_Date WHERE date_sk != -1 ORDER BY week_id; 
+SELECT TOP 10 * FROM Dim_Product WHERE product_sk != -1; 
+SELECT * FROM Dim_Promotion ORDER BY promotion_sk; 
+SELECT TOP 10 * FROM Fact_Weekly_Sales ORDER BY sales_fact_id; 
+SELECT TOP 10 * FROM Fact_Customer_Traffic ORDER BY traffic_fact_id; 
+  
+>>> INSERT: Screenshot of sample data from each of the 6 tables <<< 
+6.8 Validation and Integrity Checks 
+Check 1: Referential Integrity — No NULL Foreign Keys 
+SELECT 'Sales store_sk NULL' AS [Check], COUNT(*) AS [Violations]  
+FROM Fact_Weekly_Sales WHERE store_sk IS NULL 
+UNION ALL SELECT 'Sales date_sk NULL', COUNT(*) FROM Fact_Weekly_Sales WHERE date_sk IS 
+NULL 
+UNION ALL SELECT 'Sales product_sk NULL', COUNT(*) FROM Fact_Weekly_Sales WHERE 
+product_sk IS NULL 
+UNION ALL SELECT 'Sales promotion_sk NULL', COUNT(*) FROM Fact_Weekly_Sales WHERE 
+promotion_sk IS NULL 
+UNION ALL SELECT 'Traffic store_sk NULL', COUNT(*) FROM Fact_Customer_Traffic WHERE 
+store_sk IS NULL 
+UNION ALL SELECT 'Traffic date_sk NULL', COUNT(*) FROM Fact_Customer_Traffic WHERE 
+date_sk IS NULL; 
+  
+All should return 0 violations. 
+>>> INSERT: Screenshot showing 0 violations <<< 
+Check 2: Orphan Check — Every FK Points to Valid Dimension Row 
+SELECT 'Sales→Store orphan' AS [Check], COUNT(*) AS [Violations] 
+FROM Fact_Weekly_Sales f LEFT JOIN Dim_Store s ON f.store_sk = s.store_sk WHERE s.store_sk IS 
+NULL 
+UNION ALL 
+SELECT 'Sales→Date orphan', COUNT(*) 
+FROM Fact_Weekly_Sales f LEFT JOIN Dim_Date d ON f.date_sk = d.date_sk WHERE d.date_sk IS 
+NULL 
+UNION ALL 
+SELECT 'Sales→Product orphan', COUNT(*) 
+FROM Fact_Weekly_Sales f LEFT JOIN Dim_Product p ON f.product_sk = p.product_sk WHERE 
+p.product_sk IS NULL 
+UNION ALL 
+SELECT 'Sales→Promo orphan', COUNT(*) 
+FROM Fact_Weekly_Sales f LEFT JOIN Dim_Promotion pr ON f.promotion_sk = pr.promotion_sk 
+WHERE pr.promotion_sk IS NULL 
+UNION ALL 
+SELECT 'Traffic→Store orphan', COUNT(*) 
+FROM Fact_Customer_Traffic t LEFT JOIN Dim_Store s ON t.store_sk = s.store_sk WHERE s.store_sk IS 
+NULL 
+UNION ALL 
+SELECT 'Traffic→Date orphan', COUNT(*) 
+FROM Fact_Customer_Traffic t LEFT JOIN Dim_Date d ON t.date_sk = d.date_sk WHERE d.date_sk IS 
+NULL; 
+  
+All should return 0 violations (Unknown Member at SK = −1 ensures every FK resolves). 
+>>> INSERT: Screenshot showing 0 orphans <<< 
+Check 3: Unknown Member Audit 
+SELECT 'Unknown Store' AS [Category], COUNT(*) AS [Rows] FROM Fact_Weekly_Sales WHERE 
+store_sk = -1 
+UNION ALL SELECT 'Unknown Date', COUNT(*) FROM Fact_Weekly_Sales WHERE date_sk = -1 
+UNION ALL SELECT 'Unknown Product', COUNT(*) FROM Fact_Weekly_Sales WHERE product_sk = -
+1 
+UNION ALL SELECT 'Unknown Promotion', COUNT(*) FROM Fact_Weekly_Sales WHERE 
+promotion_sk = -1; 
+  
+Low counts = good data quality. Any non-zero count indicates source data had keys not found in 
+dimensions. 
+>>> INSERT: Screenshot of Unknown Member audit results <<< 
+Check 4: Roll-Up Integrity 
+DECLARE @fact_total DECIMAL(15,2), @agg_total DECIMAL(15,2); 
+SELECT @fact_total = SUM(dollar_sales) FROM Fact_Weekly_Sales; 
+SELECT @agg_total = SUM(sub.rev) FROM ( 
+    SELECT store_sk, date_sk, SUM(dollar_sales) AS rev 
+    FROM Fact_Weekly_Sales GROUP BY store_sk, date_sk 
+) sub; 
+SELECT @fact_total AS Fact_Grand_Total, @agg_total AS Aggregated_Total, 
+       CASE WHEN @fact_total = @agg_total THEN 'PASS' ELSE 'FAIL' END AS Result; 
+  
+>>> INSERT: Screenshot showing PASS <<< 
+Check 5: BQ5 Double-Counting Prevention 
+DECLARE @source_traffic BIGINT, @dw_traffic BIGINT; 
+SELECT @source_traffic = SUM(CUSTOMER_COUNT)  
+FROM [Ujjwal_Group3_Staging_Area].dbo.stg_Ccount WHERE STORE_ID > 0 AND WEEK_ID > 0; 
+SELECT @dw_traffic = SUM(customer_count) FROM Fact_Customer_Traffic WHERE store_sk != -1; 
+SELECT @source_traffic AS Source_Total, @dw_traffic AS DW_Total, 
+       CASE WHEN @source_traffic = @dw_traffic THEN 'PASS' ELSE 'INVESTIGATE' END AS Result; 
+  
+(Run this BEFORE dropping staging tables.) 
+>>> INSERT: Screenshot showing PASS <<< 
+6.9 BQ Validation Queries and Results 
+BQ1: Sales and Profit by Store and Time 
+SELECT s.store_id, s.store_zone, d.calendar_year, d.calendar_quarter, 
+    SUM(f.dollar_sales) AS total_revenue, 
+    AVG(f.profit_margin_pct) AS avg_margin_pct 
+FROM Fact_Weekly_Sales f 
+INNER JOIN Dim_Store s ON f.store_sk = s.store_sk 
+INNER JOIN Dim_Date d ON f.date_sk = d.date_sk 
+WHERE s.store_sk != -1 AND d.date_sk != -1 
+GROUP BY s.store_id, s.store_zone, d.calendar_year, d.calendar_quarter 
+ORDER BY d.calendar_year, d.calendar_quarter, s.store_id; 
+  
+>>> INSERT: Screenshot of BQ1 results <<< 
+BQ2: Sales and Margin by Product/Category Over Time 
+SELECT p.commodity_code, p.item_description, d.calendar_year, d.calendar_quarter, 
+    SUM(f.units_sold) AS total_units, SUM(f.dollar_sales) AS total_revenue, 
+    AVG(f.profit_margin_pct) AS avg_margin_pct 
+FROM Fact_Weekly_Sales f 
+INNER JOIN Dim_Product p ON f.product_sk = p.product_sk 
+INNER JOIN Dim_Date d ON f.date_sk = d.date_sk 
+WHERE p.product_sk != -1 AND d.date_sk != -1 
+GROUP BY p.commodity_code, p.item_description, d.calendar_year, d.calendar_quarter 
+ORDER BY d.calendar_year, d.calendar_quarter, p.commodity_code; 
+  
+>>> INSERT: Screenshot of BQ2 results <<< 
+BQ3: Effect of Promotions on Units Sold and Revenue 
+SELECT pr.sale_code, pr.promotion_type, 
+    SUM(f.units_sold) AS total_units, SUM(f.dollar_sales) AS total_revenue, 
+    AVG(f.profit_margin_pct) AS avg_margin_pct, COUNT(*) AS transaction_count, 
+    AVG(f.retail_price) AS avg_price 
+FROM Fact_Weekly_Sales f 
+INNER JOIN Dim_Promotion pr ON f.promotion_sk = pr.promotion_sk 
+WHERE pr.promotion_sk != -1 
+GROUP BY pr.sale_code, pr.promotion_type 
+ORDER BY total_revenue DESC; 
+  
+>>> INSERT: Screenshot of BQ3 results <<< 
+BQ4: Performance by Store Demographic and Zone 
+SELECT s.income_band, s.store_zone, COUNT(DISTINCT s.store_id) AS store_count, 
+    SUM(f.dollar_sales) AS total_revenue, AVG(f.profit_margin_pct) AS avg_margin_pct 
+FROM Fact_Weekly_Sales f 
+INNER JOIN Dim_Store s ON f.store_sk = s.store_sk 
+WHERE s.store_sk != -1 
+GROUP BY s.income_band, s.store_zone 
+ORDER BY s.income_band, s.store_zone; 
+  
+>>> INSERT: Screenshot of BQ4 results <<< 
+BQ5: Customer Count vs. Sales (Kimball Drill-Across) 
+WITH SalesAgg AS ( 
+    SELECT f.store_sk, f.date_sk, 
+        SUM(f.dollar_sales) AS total_revenue, SUM(f.units_sold) AS total_units 
+    FROM Fact_Weekly_Sales f 
+    GROUP BY f.store_sk, f.date_sk 
+), 
+TrafficData AS ( 
+    SELECT t.store_sk, t.date_sk, t.customer_count 
+    FROM Fact_Customer_Traffic t 
+) 
+SELECT s.store_id, s.store_zone, s.income_band, 
+    d.week_id, d.calendar_year, d.calendar_quarter, 
+    sa.total_revenue, sa.total_units, td.customer_count, 
+    CASE WHEN td.customer_count > 0  
+         THEN CAST(sa.total_revenue / td.customer_count AS DECIMAL(10,2)) ELSE 0  
+    END AS revenue_per_visitor, 
+    CASE WHEN td.customer_count > 0  
+         THEN CAST(CAST(sa.total_units AS FLOAT) / td.customer_count AS DECIMAL(10,4)) ELSE 0  
+    END AS units_per_visitor 
+FROM SalesAgg sa 
+INNER JOIN TrafficData td ON sa.store_sk = td.store_sk AND sa.date_sk = td.date_sk 
+INNER JOIN Dim_Store s ON sa.store_sk = s.store_sk 
+INNER JOIN Dim_Date d ON sa.date_sk = d.date_sk 
+WHERE s.store_sk != -1 AND d.date_sk != -1 
+ORDER BY revenue_per_visitor DESC; 
+  
+Why BQ5 works correctly: The CTE SalesAgg pre-aggregates Fact_Weekly_Sales from Store × Product × 
+Week to Store × Week (eliminating the product dimension). Only then does the join to 
+Fact_Customer_Traffic occur. Both sides produce one row per Store × Week, so no fan-out or double-
+counting occurs. This is the Kimball drill-across pattern enabled by conformed Dim_Store and Dim_Date. 
+>>> INSERT: Screenshot of BQ5 results <<< 
+6.10 List of Temporary Tables Created and Dropped 
+Per assignment requirements, all staging/temporary tables are dropped after the data mart loading is 
+complete and validated. 
+Staging Tables — Created, Used, and Dropped 
+# Table Name Database 
+Create
+d 
+During 
+Used By Dropped After 
+1 stg_Moveme
+nt 
+Ujjwal_Group3_Staging_Ar
+ea 
+Phase 1 
+(DB 
+setup) 
+Dim_Date (week 
+IDs), 
+Fact_Weekly_Sales 
+(all measures + 
+lookups) 
+Fact_Weekly_Sales 
+fully loaded & 
+validated 
+2 stg_UPC Ujjwal_Group3_Staging_Ar
+ea Phase 1 Dim_Product 
+(product attributes) 
+Dim_Product fully 
+loaded 
+3 stg_Demo Ujjwal_Group3_Staging_Ar
+ea Phase 1 
+Dim_Store 
+(demographics + 
+income_band) 
+Dim_Store fully 
+loaded 
+4 stg_Ccount Ujjwal_Group3_Staging_Ar
+ea Phase 1 
+Dim_Date (week 
+IDs), 
+Fact_Customer_Traff
+ic (traffic counts) 
+Fact_Customer_Traff
+ic fully loaded & 
+validated 
+DROP Script Executed 
+USE [Ujjwal_Group3_Staging_Area]; 
+GO 
+DROP TABLE IF EXISTS stg_Movement; 
+DROP TABLE IF EXISTS stg_UPC; 
+DROP TABLE IF EXISTS stg_Demo; 
+DROP TABLE IF EXISTS stg_Ccount; 
+GO 
+  
+>>> INSERT: Screenshot of DROP TABLE execution in SSMS <<< >>> INSERT: Screenshot of 
+Object Explorer showing staging database with no tables remaining <<< 
+6.11 Special ETL Techniques Implemented 
+This section highlights notable techniques used in the ETL that go beyond standard copy-and-load 
+operations. 
+Special Technique 1: Log-Income to Dollar Conversion (EXP Transformation) 
+The INCOME field in DEMO.csv stores the natural logarithm of median household income (e.g., INCOME 
+= 10.9). To recover the actual dollar value for meaningful analysis, we apply EXP() during the Dim_Store 
+loading Data Flow: 
+SELECT EXP(LOG_INCOME) AS MEDIAN_INCOME_DOLLARS FROM stg_Demo; 
+-- Example: EXP(10.9) = $54,176.35 
+  
+This transformation is performed in the OLE DB Source SQL query rather than in a Derived Column to 
+leverage SQL Server's native EXP() function with full decimal precision. The resulting dollar value feeds 
+into the income_band Derived Column (High ≥ $60K, Medium ≥ $35K, Low < $35K). 
+Special Technique 2: Multi-Pack QTY Normalization in Dollar Sales 
+The dollar_sales formula — (PRICE × MOVE) / QTY — normalizes multi-buy pricing. QTY represents the 
+pricing bundle quantity: a 2-for-$5.00 deal has PRICE = $5.00 and QTY = 2. Without dividing by QTY, 
+revenue would be overstated for bundled products. This Derived Column expression in the 
+Fact_Weekly_Sales Data Flow ensures accurate revenue: 
+SSIS Expression: (DT_DECIMAL,2)((PRICE * MOVE) / QTY) 
+  
+The QTY default of 1 (from Rule T3) prevents division-by-zero for null/zero values. 
+Special Technique 3: Unknown Member Surrogate Key Pattern 
+Following Kimball best practice, all four dimension tables are pre-loaded with an Unknown Member record 
+at surrogate key −1 before any fact loading begins. During fact loading, the four Lookup Transformations 
+are configured with "Ignore failure" for unmatched rows, producing NULL surrogate keys. A post-load 
+Execute SQL Task then replaces all NULL SKs with −1: 
+UPDATE Fact_Weekly_Sales SET store_sk = -1 WHERE store_sk IS NULL; 
+-- (repeated for date_sk, product_sk, promotion_sk, and traffic fact) 
+  
+This ensures: (1) no transaction is silently dropped, (2) analysts can query WHERE store_sk = -1 to audit 
+unresolved references, and (3) late-arriving dimension data can be reconciled without reprocessing historical 
+loads. 
+Special Technique 4: Drill-Across Implementation for BQ5 
+BQ5 requires combining data from two fact tables at different grains. The implementation uses the Kimball 
+drill-across pattern with CTEs: 
+1. Pre-aggregate Fact_Weekly_Sales from Store × Product × Week to Store × Week (SUM of 
+dollar_sales and units_sold), eliminating the product dimension. 
+2. Join the aggregated sales to Fact_Customer_Traffic on conformed store_sk and date_sk. 
+3. Compute revenue_per_visitor and units_per_visitor as derived conversion metrics. 
+This ensures customer_count is never duplicated across product rows, maintaining mathematical accuracy. 
+Special Technique 5: Conditional Split with Row Count Auditing 
+In the stg_Movement Data Flow, the Conditional Split component routes rows into two outputs: ValidRows 
+(OK = 1 AND MOVE > 0 AND PRICE > 0) and RejectedRows (everything else). The rejected output 
+connects to a Row Count transformation that stores the count in SSIS variable @RejectedRowCount. This 
+enables post-execution auditing: we can report exactly how many source rows were excluded for data 
+quality reasons, providing transparency into the ETL pipeline's filtering behavior. 
+ 
+7. Business Value and Strategic Impact 
+The DFF Data Warehouse transforms fragmented CSV files into an integrated analytical platform: 
+Promotion ROI (BQ3): Comparing revenue and units across Bonus Buy, Coupon, Simple Reduction, and 
+No Promotion categories enables data-driven circular planning. 
+Store Portfolio Intelligence (BQ4): Income-band segmentation reveals whether high-income-zone stores 
+are underperforming, signaling competition or inventory issues. 
+Traffic Conversion Analytics (BQ5): Revenue-per-visitor metrics identify stores with high traffic but low 
+conversion — opportunities for layout, staffing, or merchandising improvements. 
+Performance Tracking (BQ1, BQ2): Calendar-enriched time-series analysis supports year-over-year 
+comparison, seasonal detection, and trend identification at store, product, and category levels. 
+ 
+8. Conclusion 
+This integrated report presents the complete data warehouse lifecycle for Dominick's Finer Foods: 
+requirements gathering (Section 1–2), Kimball dimensional modeling (Sections 3–4), ETL planning (Section 
+5), and SSIS implementation with full evidence (Section 6). 
+The dual fact table architecture — Fact_Weekly_Sales at Store × Product × Week and 
+Fact_Customer_Traffic at Store × Week — is a mandatory design driven by grain incompatibility. 
+Conformed Dim_Store and Dim_Date dimensions enable the Kimball drill-across pattern for BQ5. 
+The ETL pipeline, implemented entirely in SSIS on SQL Server 2016, includes 11 transformation/cleansing 
+rules (OK filtering, QTY normalization, SALE standardization, DESCRIP cleaning, EXP(INCOME) 
+conversion, income_band derivation, dollar_sales computation, calendar derivation, surrogate key lookup 
+with Unknown Member fallback, and customer count aggregation). All five business questions have been 
+validated with executable SQL queries returning correct results. 
+ 
+9. References 
+Chevalier, J. A., Kashyap, A. K., & Rossi, P. E. (2003). Why don't prices rise during periods of peak 
+demand? American Economic Review, 93(1), 15–37. 
+Chintagunta, P. K. (2002). Investigating category pricing behavior at a retail chain. Journal of Marketing 
+Research, 39(2), 141–154. 
+Company-Histories.com. (n.d.). Dominick's Finer Foods, Inc. Retrieved from https://www.company-
+histories.com/ 
+Dhar, S. K., & Hoch, S. J. (1997). Why store brand penetration varies by retailer. Marketing Science, 16(3), 
+208–227. 
+Hoch, S. J., Kim, B.-D., Montgomery, A. L., & Rossi, P. E. (1995). Determinants of store-level price 
+elasticity. Journal of Marketing Research, 32(1), 17–29. 
+James M. Kilts Center for Marketing. (2013). Dominick's Dataset. University of Chicago Booth. 
+https://www.chicagobooth.edu/research/kilts/datasets/dominicks 
+Kimball, R., & Ross, M. (2013). The Data Warehouse Toolkit: The Definitive Guide to Dimensional 
+Modeling (3rd ed.). Wiley. 
+Knight, B., Veerman, E., et al. (2014). Professional Microsoft SQL Server 2014 Integration Services. Wrox 
+Press. 
+Peltzman, S. (2000). Prices rise faster than they fall. Journal of Political Economy, 108(3), 466–502. 
+Sen, A. (2026). ISTM 637 Course Materials. Texas A&M University, Mays Business School. 
+Turban, E., Sharda, R., & Delen, D. (2014). Business Intelligence and Analytics: Systems for Decision 
+Support (10th ed.). Pearson. 
+ 
+10. Appendix: Assumptions and Technical Notes 
+A1. Revenue Formula: Dollar sales = (PRICE × MOVE) / QTY. QTY = pricing bundle quantity (2-for-$5 
+→ QTY = 2). 
+A2. Temporal Alignment: WEEK values in CCOUNT.csv use the same numbering system as Movement 
+files. 
+A3. Dim_Date Epoch: Week 1 = September 14, 1989. Calendar attributes derived via DATEADD(WEEK, 
+WEEK_ID − 1, epoch). 
+A4. SCD Type 1: Demographics are static 1990 Census values. Overwrite strategy used. 
+A5. EXP(INCOME): INCOME in DEMO.csv = ln(median household income). EXP() recovers dollar 
+values. 
+A6. Profit Storage: profit_margin_pct stored as cents-per-dollar (25.30 = 25.30% margin). Use AVG(), not 
+SUM(). 
+A7. OK Filter: OK = 0 rows permanently excluded. MOVE ≤ 0 and PRICE ≤ 0 also rejected. 
+A8. Unknown Members: SK = −1 reserved in all dimensions for unresolved lookups. 
+A9. SSIS-Only: All ETL performed exclusively in SSIS. No Python, Java, or Excel used for 
+transformations. 
+A10. Database Names: Staging = Ujjwal_Group3_Staging_Area. Data Warehouse = 
+Ujjwal_Group3_DW_Area. Both on SQL Server 2016. 
+ 

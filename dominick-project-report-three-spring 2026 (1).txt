@@ -1,0 +1,104 @@
+Assigned on: March 18, 2026			ISTM 637	   		Points: 90
+Due on: April 8, 2026				Spring 2026	        		Joint Project
+
+Design and Implementation of a Data Warehouse for a Retail Store
+
+“Integrated” Report 3:  Requirements Analysis, Data Design and
+ETL Design using SSIS
+
+Overall Objective of this Project 
+The objective of this project is to design and develop a data warehouse for a retail store chain called Dominick’s Fine Food (DFF) that has many branches. We use their store level data to set up the data warehouse and help them analyze the data.
+
+
+Project Scenario
+The data for this project includes store-level data covering shelf management and pricing from all the branches of DFF. The data can be accessed from the following web site:  HYPERLINK "http://gsbwww.uchicago.edu/kilts/research/db/dominicks/" http://gsbwww.uchicago.edu/kilts/research/db/dominicks/ or from Da Vinci.
+
+
+Overall Objective of this Report
+This report focuses on the design and implementation of the ETL operations and pumping the data into the warehouse tables. The tasks include:
+All operations for this report must be done in SSIS environment. No use of Python, C++, Java, Excel, etc. for this report.
+Data should be sourced from text files or CSV files as the current data sets are in CSV format. 
+Use only SSIS to store text/CSV data files first in a data base called “unique name-staging-area” in SQL Server 2016. 
+Create the independent data marts in a database called “unique name-dw-area” if you have not done so at the end of Report 2.
+Write a report that shows 
+
+Development of an ETL plan (Include all these into the report.)
+Write all the target data needed in the data warehouse. 
+Write all the data sources (what is available from DFF). 
+Prepare and write data mappings in Excel for data elements from sources to staging and then data mapping from staging to data warehouse (include all transformations). 
+Write all comprehensive data extraction rules. 
+Write all data transformation and cleansing rules. 
+Write a plan for aggregate tables. 
+Write out the organization of data staging area. 
+Write procedures for all data extractions and loadings. 
+Write the ETL for dimension table.
+Write the ETL for fact tables. 
+
+Implementation of the ETL 
+Perform necessary cleansing, summarizations and other transformations as needed in the staging database. These operations will be different for each group. 
+Look at the data granularity needed at the independent data mart level. Include these in the report.
+Start loading the data into the independent data marts.
+Once loading of each table is done, remove all temp tables from the staging area. Make sure to write a list of these temporary tables in the report. 
+Make sure to include ALL mapping table(s) in Excel in the report (should be similar to the tables you created in Report 2).
+Make sure to include ALL SQL statements that you have used for the ETL operations.
+Submit a report that shows all these tasks that you have done for ALL ETL operations and the snapshots of the before-after table contents and the ETL runs. This is important as it will show how effective your ETLs have been. 
+Report should also have text to tell the story and be self-explanatory.
+
+Submit
+Your group needs to submit a report that shows all these tasks have been done. Make sure to add the contents of reports 1 and 2 with this report. If you need to edit the previous reports, please do so now. The final report to be submitted should be an integration of all three reports.
+
+Introduction
+Use Report 1 text here
+Talk about DFF and the problems that you are dealing with in the group project
+Understanding of the data 
+Describe metadata for all the OLTP source files 
+Draw ERDs (use Visio) to show the relationships among the data
+Subject Area Understanding
+Use Report 1 here
+Read some of the papers (you don’t have to read all. 3-5 good papers would suffice) from the web site URL.  Also research online on retail domain.  List out some of the problems that you from your reading that are relevant to this case. Also create a reference list and attach it at the end of the paper.  
+Based on your understanding of the data, metadata and papers, list out 10 business questions and point out those 5 that are chosen by DFF.
+Give support from the data to each question listed above to show that they are indeed useful for DFF.  Use Excel, its statistics tools, Pivot tables and charts (Pivot or otherwise).
+Overview of Kimball’s Methodology
+Use Report 2 here
+Describe each step of the Methodology.
+Why is it important to follow this methodology to create independent data marts.  
+DW Logical Design (Star Schema Design)
+Use Report 2 here
+Use Dimensional Modeling technique to create the star schemas (could create snowflake schemas if needed).  Look at Kimball’s methodology of creating independent conformable data marts that has been discussed in class.  (Hint: Stay away from snowflake, if possible.) Make sure to use Kimball’s process of data mart design in total.
+Develop the data warehouse schema using Visio, Lucid chart, or any other drawing tool (target DB is SQL Server 2016).
+Make sure that your BQs (chosen for you from Report 1) correspond to the structure of independent data marts.  Justify each schema with logic and also with data to explain how it supports the BQs.
+Provide a Mapping table#1 from SOURCE FILES TO STAGING TABLES that includes {source file name, source_file_attribute, mapping, staging_table_type (relation), staging_table_name, staging_table_attribute}. Remember that the mapping functions could be transformation functions and/or copy, replicate etc. functions.
+ SHAPE  \* MERGEFORMAT 
+
+Provide another Mapping table#2 from STAGING TABLES TO PRESENTATION SERVER TALBES that includes {staging_table, staging_table_attribute, mapping, Data Mart_table_type (fact table/dimension table), Data Mart_table_name, Data Mart_table_attribute}. Remember that the mapping function here could be copy plus other functions. See a typical example below:
+
+ SHAPE  \* MERGEFORMAT 
+
+Develop a brief physical design plan by describing data aggregate plan, indexing plan, data standardization plan, and storage plan (remember that your data marts will grow in future for DFF).  Keep this up to two paragraphs.
+
+Develop ETL Plan
+Write all the target data needed in the data warehouse. 
+Write all the data sources (what is available from DFF). 
+Prepare and write data mappings in Excel for data elements from sources to staging and then data mapping from staging to data warehouse (include all transformation details now). 
+Write all comprehensive data extraction rules. 
+Write all data transformation and cleansing rules. 
+Write a plan for aggregate tables. 
+Write out the organization of data staging area. 
+Write procedures for all data extractions and loadings. 
+Write the ETL for dimension table.
+Write the ETL for fact tables.
+Implementation of the ETL Plan
+Perform necessary cleansing, summarizations and other transformations as needed in the staging database. These operations will be different for each group. 
+Look at the data granularity needed at the independent data mart level. Include these in the report.
+Start loading the data into the independent data marts.
+Once loading of each table is done, remove all temp tables from the staging area. Make sure to write a list of these temporary tables in the report.
+
+Grading
+Presentation of the report				10%
+Quality of integration of three reports			10%
+Include shorter versions of Reports 1 and 2. All three reports must feel like one integrated report.
+Quality of the content					80%
+Provide the ETL plan as discussed in #5
+Make sure to show all works including the ETL by capturing the screens.
+Detail out all your E, T and L processes also in text
+Discuss and highlight any special things that you have done in your ETL tasks.

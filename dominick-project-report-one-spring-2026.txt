@@ -1,0 +1,66 @@
+Assigned on: February 4, 2026		ISTM 637			Points: 50
+Due on: February 25, 2026			Spring 2026	 Joint Consulting Project
+
+Semester Group Consulting Project Title:  
+Design and Implementation of a Data Warehouse 
+for a Retail Store with Store-level Data
+
+Consulting Report-1:  Requirements Gathering to Create Business Questions 
+And Domain Understanding
+
+Absolutely no discussions between project groups about the entire project.
+
+Overall Objective of this Project 
+The objective of this project is to design and develop a data warehouse for a retail store chain named Dominick’s Fine Food (DFF), which operates multiple branches in the Chicago area. The project's dataset consists of store-level information related to shelf management and pricing across all DFF branches. According to the source, “this is historical data. Between 1989 and 1994, Chicago Booth partnered with Dominick’s Finer Foods to conduct store-level research on shelf management and pricing. Randomized experiments were conducted in over 25 categories throughout the 100-store chain. (A brief history of the store can be found at https://www.company-histories.com/Dominicks-Finer-Foods-Inc-Company-History.html.) As an outcome of this collaboration, approximately nine years of store-level data covering sales of more than 3,500 UPCs are included in this dataset. This data set is notable for its comprehensive coverage and the inclusion of retail margin information. The data, available in SAS V6 or V7 format, can be accessed via the following website: https://www.chicagobooth.edu/research/kilts/datasets/dominicks  
+
+However, I have downloaded the data for your convenience, and you need to access CSV data files from the Canvas link.  The data is stored in my Google Drive in zipped form.   The link will be provided in the Portal.
+
+Data Types
+The folder contains multiple files totaling about 5 GB of uncleaned data. Unzip the folder to access them. The datasets fall into two categories; refer to the codebook and manual on the portal or at research.chicagobooth.edu for details.
+
+(A) General Files: 
+The Customer Count file: Ccount (The Customer Count file contains information on store traffic and coupon usage, by store.) 
+Store-level Demographics: Demographics (The demographic file contains detailed information based on the U.S. Government census.)
+
+(B) Category Specific Files 
+There are files for each category studied during the project. Each category is referenced by a three-letter acronym. 
+
+UPC files: upcxxx (where xxx stands for the category acronym)  The UPC files contain one record for each UPC in a category. They contain information about product name, size, commodity code, etc. The files are sorted by UPC. 
+Movement files: wxxx (where xxx stands for the category acronym) The movement files contain weekly sales data for each UPC in each store for over 5 years.  The variables included in these files comprise: price, unit sold, profit margin, deal code, etc.  The files are sorted by UPC, store, and week.
+
+
+Activities for Consulting Report-1
+This report will concentrate on your understanding of the project and will focus on the data and development of the business questions for the data warehouse.  The activities involved are as follows:
+
+As some data are in CSV format and others are in text and HTML format (see the website and the manual), you need to be careful how to download the data.  Look at the metadata of all these OLTP source files in the manual.
+
+For this report, selectively download some of the data in the Lab or your laptop and study them. Do not put them in SQL Server right now.  Import the sample data to text files or to Excel. Understand the data by using Excel, Excel Charts, and Pivot tables and charts (if needed).  You might want to download JMP from  HYPERLINK "http://www.jmp.com/" http://www.jmp.com/ for 30-day use.  This is a very important step.  
+
+Do domain research FOR marketing and sales using the above web site to see what possible questions are useful.  We will discuss what they are in Activity 1.  Most of the questions should focus on marketing aspects of a retail store.  The URL is once again  HYPERLINK "https://www.chicagobooth.edu/research/kilts/datasets/dominicks" https://www.chicagobooth.edu/research/kilts/datasets/dominicks  HYPERLINK "http://research.chicagobooth.edu/marketing/databases/dominicks/papers.aspx" .  You can also do online search to understand the issues with this kind of retail data.  CITE EVERYTHING THAT YOU ARE GOING TO USE IN YOUR REPORT.
+
+Based on your analysis of the sample data (point #2), your research (point #3), and class slides develop a set of 10 business questions (also called OLAP questions) that are useful for DFF and implementable for the project.  (Hint: Use Excel tables and charts to show if the questions are implementable or not.  Write the reasons why these business questions (BQs) are important to DFF.  These BQs are OLAP questions.  Make use of Pivot tables (if needed) as much as possible.   
+
+Submission of the Report
+A report in a report format must be submitted that shows all the above activities have been done.  Make sure that your report follows EXACTLY the structure given below.  All activities refer to the activities listed earlier:
+
+Introduction
+Talk about DFF (you can use online resources but make sure to cite them) and the problems for it that you are dealing with in the group project
+Details about the Data
+Understanding of the data (covers Activity #2) ...  (25%)
+Describe metadata for all the OLTP source files (covers Activity#1) … (0%)
+Draw ERDs (use Visio) to show the relationships among the data (Activity #1).…   (10%)
+Retail Subject Area Understanding
+Read some of the papers (you don’t have to read all. 3-5 good papers would suffice) from the web site URL.  Also research online on retail domain.  List out some of the problems that you from your reading that are relevant for this case. Also create a reference list and attach it at the end of the paper.  Cite them in the text as (Sen, 1993. “the time of the paper,” vol# etc., year) (Activity#3) … (25%)
+Business Questions
+Based on your understanding of the data, metadata and papers, list out 10 business questions (Activity#4).
+Give support from the data to each question listed above to show that they are indeed useful for DFF.  Use Excel, its statistics tools, Pivot tables and charts (Pivot or otherwise).
+Prioritize the business questions.  Rationalize your prioritizations, that is, why are these priorities important for DFF to have? …  (40%)
+
+Grading
+Presentation of the report 						20%- 10
+Quality of the content							80% - 40
+Describe the metadata for all the OLTP source files. 		No points
+ERD for the source data					(10% of 40- 4)
+Understanding of source data (data analysis using Excel/Charts/Pivot tables) (25% of 40- 10)
+Subject Area understanding (research etc.)			(25% of 40- 10)
+List out 10 business questions and prioritize them.  Rationalize your prioritizations. (40% of 40- 16)
